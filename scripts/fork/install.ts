@@ -152,6 +152,8 @@ function installApplication(): void {
   const launchScript = [
     "#!/bin/sh",
     "set -eu",
+    // Finder does not inherit the interactive shell's tool paths.
+    `export PATH=${shellQuote([NodePath.dirname(process.execPath), ...(process.env.PATH ?? "").split(NodePath.delimiter).filter(NodePath.isAbsolute)].join(NodePath.delimiter))}`,
     `exec ${shellQuote(process.execPath)} ${shellQuote(NodePath.join(repositoryRoot, "scripts/fork/install.ts"))} run --app-path ${shellQuote(applicationPath)} "$@"`,
     "",
   ].join("\n");
