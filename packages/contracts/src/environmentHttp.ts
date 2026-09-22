@@ -44,6 +44,7 @@ import {
   PullRequestOperationError,
   PullRequestUnavailableError,
 } from "./pullRequest.ts";
+import { ForkTriageRefreshResult, ForkTriageReport } from "./forkTriage.ts";
 import {
   RelayCloudEnvironmentHealthRequest,
   RelayCloudMintCredentialRequest,
@@ -554,6 +555,22 @@ class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").a
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+class EnvironmentForkTriageHttpApi extends HttpApiGroup.make("forkTriage")
+  .add(
+    HttpApiEndpoint.get("report", "/api/fork/triage/report", {
+      headers: OptionalBearerHeaders,
+      success: ForkTriageReport,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("refresh", "/api/fork/triage/refresh", {
+      headers: OptionalBearerHeaders,
+      success: ForkTriageRefreshResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -620,4 +637,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
+  .add(EnvironmentForkTriageHttpApi)
   .add(EnvironmentConnectHttpApi) {}

@@ -1,5 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off - Build hooks run outside the Effect runtime.
 import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
@@ -13,7 +16,12 @@ const repoEnv = loadRepoEnv();
 // bundle that already carries its own copy of the same libraries.
 const isMainProcessExternal = (id: string) =>
   id === "electron" || id.startsWith("electron/") || isDesktopRuntimeExternalDependency(id);
-const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+const shouldLaunchElectronAfterPack =
+  process.env.T3CODE_DESKTOP_DEV === "1" && process.env.T3CODE_FORK_LAUNCH !== "1";
+const forkBuildReady = (part: string) => {
+  const directory = process.env.T3CODE_FORK_READY_DIR;
+  if (directory) NodeFS.writeFileSync(NodePath.join(directory, part), "ready");
+};
 const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
@@ -63,7 +71,11 @@ export default defineConfig({
         neverBundle: isMainProcessExternal,
         onlyBundle: false,
       },
-      ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
+      ...(process.env.T3CODE_FORK_READY_DIR
+        ? { onSuccess: () => forkBuildReady("main") }
+        : shouldLaunchElectronAfterPack
+          ? { onSuccess: "node scripts/dev-electron.mjs" }
+          : {}),
     },
     {
       format: "cjs",
@@ -93,6 +105,7 @@ export default defineConfig({
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
+      ...(process.env.T3CODE_FORK_READY_DIR ? { onSuccess: () => forkBuildReady("preload") } : {}),
       deps: {
         // Sandboxed Electron preloads cannot reliably resolve package imports
         // from inside the packaged ASAR. Bundle Clerk's preload bridge into the

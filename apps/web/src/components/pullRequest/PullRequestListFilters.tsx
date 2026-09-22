@@ -99,11 +99,17 @@ export function PullRequestSearchInput({
   value,
   busy,
   onChange,
+  placeholder = "Search pull requests, or label:bug",
+  ariaLabel = "Search pull requests",
 }: {
   value: string;
   /** A search is on its way to the hosts, said where the typing is rather than over the list. */
   busy?: boolean;
   onChange: (value: string) => void;
+  /** Caller wording for a search whose fields differ from the pull request list. */
+  placeholder?: string;
+  /** Caller wording for the accessible name. */
+  ariaLabel?: string;
 }) {
   return (
     <InputGroup className="min-w-0 flex-1 **:[input]:h-9 sm:**:[input]:h-8">
@@ -114,8 +120,8 @@ export function PullRequestSearchInput({
         type="search"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
+        placeholder={placeholder}
+        aria-label={ariaLabel}
       />
     </InputGroup>
   );

@@ -49,7 +49,7 @@ export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const legacyPath = environment.path.join(
-    environment.appDataDirectory,
+    environment.userDataDirectory,
     environment.legacyUserDataDirName,
   );
   const legacyPathExists = yield* fileSystem.exists(legacyPath).pipe(
@@ -63,7 +63,7 @@ export const resolveUserDataPath = Effect.gen(function* () {
   );
   return legacyPathExists
     ? legacyPath
-    : environment.path.join(environment.appDataDirectory, environment.userDataDirName);
+    : environment.path.join(environment.userDataDirectory, environment.userDataDirName);
 }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
 
 /** @public Service construction is part of the canonical Effect module API. */

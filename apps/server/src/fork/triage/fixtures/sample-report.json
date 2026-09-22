@@ -1,0 +1,54 @@
+{
+  "fixture": true,
+  "description": "Synthetic report example. This is not a live GitHub result.",
+  "generatedAt": "2026-09-22T00:00:00Z",
+  "lastScanAt": "2026-09-22T00:00:00Z",
+  "items": [
+    {
+      "repo": "example/widgets",
+      "number": 1,
+      "url": "https://github.com/example/widgets/pull/1",
+      "title": "Fixture: approved draft with a merge conflict",
+      "kind": "pull-request",
+      "lifecycle": "draft",
+      "classification": "draft",
+      "blockers": [
+        {
+          "code": "merge-conflict",
+          "label": "GitHub reports a merge conflict.",
+          "actor": "author",
+          "evidenceUrls": ["https://github.com/example/widgets/pull/1"]
+        }
+      ],
+      "nextActors": ["author"],
+      "evidence": [],
+      "lastSuccessfulRefresh": "2026-09-22T00:00:00Z",
+      "errors": [],
+      "certainty": "factual",
+      "relations": [],
+      "judgments": []
+    }
+  ],
+  "changes": [],
+  "errors": [],
+  "usage": {
+    "githubRequests": 0,
+    "githubPages": 0,
+    "inferenceRequests": 0,
+    "inferenceCacheHits": 0,
+    "inferenceInputCharacters": 0,
+    "inferenceBudget": 0,
+    "inferenceBudgetRemaining": 0,
+    "truncatedConnections": 0
+  },
+  "configSummary": {
+    "scopes": ["example/widgets"],
+    "refreshIntervalMinutes": 15,
+    "staleAfterMinutes": 60,
+    "githubPageLimit": 20,
+    "inferenceEnabled": false,
+    "inferenceProvider": "vercel-ai-gateway",
+    "inferenceModel": "typesafe-ai/jev",
+    "mergePolicies": []
+  }
+}
