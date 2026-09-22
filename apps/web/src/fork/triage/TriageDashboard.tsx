@@ -1,7 +1,15 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ForkTriageItem } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { CopyIcon, ExternalLinkIcon, MessageSquareIcon, RefreshCwIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  LayersIcon,
+  MessageSquareIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { type MouseEvent, useMemo, useState } from "react";
 
 import {
@@ -13,6 +21,8 @@ import {
 import { PullRequestSearchInput } from "~/components/pullRequest/PullRequestListFilters";
 import { PullRequestRow, type PullRequestRowTarget } from "~/components/pullRequest/PullRequestRow";
 import type { EnvironmentPullRequestEntry } from "~/components/pullRequest/pullRequestList.logic";
+import { WorkspacePageContainer } from "~/components/WorkspacePageContainer";
+import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -109,105 +119,168 @@ function threadForItem(item: EnvironmentTriageItem, threads: ReturnType<typeof u
 }
 
 function TriageEvidence({ item }: { readonly item: ForkTriageItem }) {
-  const [open, setOpen] = useState(false);
   const progress = childProgress(item.details?.childProgress);
   const evidence = item.evidence
     .toSorted((left, right) => (right.at ?? "").localeCompare(left.at ?? ""))
     .slice(0, 40);
   const omittedEvidenceCount = item.evidence.length - evidence.length;
   return (
-    <details
-      className="px-3 pb-2 pl-9 text-xs text-muted-foreground"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="cursor-pointer">
-        Details ({item.blockers.length} blockers, {item.evidence.length} evidence)
-      </summary>
-      {open ? (
-        <div className="mt-2 space-y-2 border-l pl-3">
-          {item.blockers.map((blocker) => (
-            <p key={`${blocker.code}:${blocker.label}`}>
-              {blocker.label}
-              {blocker.actor ? ` Next: ${blocker.actor}.` : ""}{" "}
-              {blocker.evidenceUrls.map((url) => (
-                <a className="underline" key={url} href={url} rel="noreferrer" target="_blank">
-                  Source{" "}
-                </a>
-              ))}
-            </p>
+    <div className="space-y-2 text-xs text-muted-foreground">
+      <p>{blockerSummary(item)}</p>
+      <p>
+        {item.nextActors.length ? `Next: ${item.nextActors.join(", ")}. ` : ""}
+        {item.certainty}. {freshnessLabel(item)}.
+      </p>
+      {item.blockers.map((blocker) => (
+        <p key={`${blocker.code}:${blocker.label}`}>
+          {blocker.label}
+          {blocker.actor ? ` Next: ${blocker.actor}.` : ""}{" "}
+          {blocker.evidenceUrls.map((url) => (
+            <a className="underline" key={url} href={url} rel="noreferrer" target="_blank">
+              Source{" "}
+            </a>
           ))}
-          {item.relations.map((relation) => (
-            <p key={`${relation.kind}:${relation.target}:${relation.source}`}>
-              {relation.kind.replaceAll("-", " ")}:{" "}
-              <a className="underline" href={relation.evidenceUrl} rel="noreferrer" target="_blank">
-                {relation.target}
-              </a>{" "}
-              ({relation.certainty})
-            </p>
-          ))}
-          {item.kind === "issue" && progress && progress.total > 0 ? (
-            <p>
-              Child issues: {progress.closed} of {progress.total} closed.
-              {progress.complete === false
-                ? " Some child evidence is missing."
-                : " Closure does not confirm shipment."}
-            </p>
-          ) : null}
-          {typeof item.details?.nextUnresolvedDependency === "string" ? (
-            <p>
-              Next unresolved item:{" "}
-              <a
-                className="underline"
-                href={item.details.nextUnresolvedDependency}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {item.details.nextUnresolvedDependency}
-              </a>
-            </p>
-          ) : null}
-          {item.kind === "issue" && typeof item.details?.workerExecution === "string" ? (
-            <p>{item.details.workerExecution}</p>
-          ) : null}
-          {item.errors.map((error) => (
-            <p key={`${error.code}:${error.at}`}>{error.message}</p>
-          ))}
-          {item.judgments.map((judgment) => (
-            <p key={judgment.id}>
-              {judgment.label}:{" "}
-              {typeof judgment.value === "string" ? judgment.value : JSON.stringify(judgment.value)}{" "}
-              ({judgment.certainty}
-              {judgment.confidence === null ? "" : `, confidence ${judgment.confidence.toFixed(2)}`}
-              )
-            </p>
-          ))}
-          {evidence.map((evidence) => (
-            <p key={evidence.sourceId} className="break-words">
-              <a
-                className="underline"
-                href={evidence.url || item.url}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {evidence.author ?? evidence.sourceId}
-              </a>
-              {evidence.at ? ` · ${formatScanTime(evidence.at)}` : ""}
-              <br />
-              {evidence.excerpt}
-            </p>
-          ))}
-          {omittedEvidenceCount > 0 ? (
-            <p>
-              {omittedEvidenceCount} evidence{" "}
-              {omittedEvidenceCount === 1 ? "entry is" : "entries are"} omitted.{" "}
-              <a className="underline" href={item.url} rel="noreferrer" target="_blank">
-                View on GitHub
-              </a>
-            </p>
-          ) : null}
-        </div>
+        </p>
+      ))}
+      {item.relations.map((relation) => (
+        <p key={`${relation.kind}:${relation.target}:${relation.source}`}>
+          {relation.kind.replaceAll("-", " ")}:{" "}
+          <a className="underline" href={relation.evidenceUrl} rel="noreferrer" target="_blank">
+            {relation.target}
+          </a>{" "}
+          ({relation.certainty})
+        </p>
+      ))}
+      {item.kind === "issue" && progress && progress.total > 0 ? (
+        <p>
+          Child issues: {progress.closed} of {progress.total} closed.
+          {progress.complete === false
+            ? " Some child evidence is missing."
+            : " Closure does not confirm shipment."}
+        </p>
       ) : null}
-    </details>
+      {typeof item.details?.nextUnresolvedDependency === "string" ? (
+        <p>
+          Next unresolved item:{" "}
+          <a
+            className="underline"
+            href={item.details.nextUnresolvedDependency}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {item.details.nextUnresolvedDependency}
+          </a>
+        </p>
+      ) : null}
+      {item.kind === "issue" && typeof item.details?.workerExecution === "string" ? (
+        <p>{item.details.workerExecution}</p>
+      ) : null}
+      {item.errors.map((error) => (
+        <p key={`${error.code}:${error.at}`}>{error.message}</p>
+      ))}
+      {item.judgments.map((judgment) => (
+        <p key={judgment.id}>
+          {judgment.label}:{" "}
+          {typeof judgment.value === "string" ? judgment.value : JSON.stringify(judgment.value)} (
+          {judgment.certainty}
+          {judgment.confidence === null ? "" : `, confidence ${judgment.confidence.toFixed(2)}`})
+        </p>
+      ))}
+      {evidence.map((evidence) => (
+        <p key={evidence.sourceId} className="break-words">
+          <a className="underline" href={evidence.url || item.url} rel="noreferrer" target="_blank">
+            {evidence.author ?? evidence.sourceId}
+          </a>
+          {evidence.at ? ` · ${formatScanTime(evidence.at)}` : ""}
+          <br />
+          {evidence.excerpt}
+        </p>
+      ))}
+      {omittedEvidenceCount > 0 ? (
+        <p>
+          {omittedEvidenceCount} evidence {omittedEvidenceCount === 1 ? "entry is" : "entries are"}{" "}
+          omitted.{" "}
+          <a className="underline" href={item.url} rel="noreferrer" target="_blank">
+            View on GitHub
+          </a>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TriageDetails({
+  item,
+  changed,
+  onOpenThread,
+}: {
+  readonly item: EnvironmentTriageItem;
+  readonly changed: boolean;
+  readonly onOpenThread: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const Icon = item.blockers.length > 0 ? CircleAlertIcon : InfoIcon;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={<Button size="icon-tiny" variant="ghost" />}
+        aria-label={`Triage details for ${item.repo}#${item.number}${changed ? ", changed this scan" : ""}${item.blockers.length ? `, ${item.blockers.length} ${item.blockers.length === 1 ? "blocker" : "blockers"}` : ""}`}
+        title={blockerSummary(item)}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <Icon
+          aria-hidden
+          className={cn(
+            "size-3.5",
+            item.certainty === "stale" || item.blockers.length > 0
+              ? "text-amber-500"
+              : "text-muted-foreground",
+          )}
+        />
+        {changed ? (
+          <span
+            aria-label="Changed this scan"
+            className="absolute -right-0.5 -top-0.5 size-1 rounded-full bg-primary"
+          />
+        ) : null}
+      </PopoverTrigger>
+      <PopoverPopup
+        align="start"
+        className="w-112 max-w-[calc(100vw-2rem)]"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {open ? (
+          <div className="max-h-[min(60vh,calc(var(--available-height)-2rem))] space-y-3 overflow-y-auto">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">
+                {item.repo}#{item.number}
+              </span>
+              <div className="flex items-center gap-2">
+                {onOpenThread ? (
+                  <Button onClick={onOpenThread} size="xs" variant="ghost">
+                    <MessageSquareIcon />
+                    Thread
+                  </Button>
+                ) : null}
+                <a
+                  className="inline-flex items-center gap-1 text-xs underline"
+                  href={item.url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <ExternalLinkIcon className="size-3" />
+                  GitHub
+                </a>
+              </div>
+            </div>
+            {changed ? <p className="text-xs text-primary">Changed this scan</p> : null}
+            <TriageEvidence item={item} />
+          </div>
+        ) : null}
+      </PopoverPopup>
+    </Popover>
   );
 }
 
@@ -237,12 +310,7 @@ function UnmatchedTriageRow({
         state={state}
       />
       <PullRequestRowLines
-        meta={
-          <span className="truncate">
-            {item.repo} ·{" "}
-            {item.kind === "issue" ? "Issue link" : "Pull request list metadata unavailable"}
-          </span>
-        }
+        meta={<span className="truncate">{item.repo}</span>}
         number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>#{item.number}</span>}
         title={item.title}
         updatedAt={typeof item.details?.updatedAt === "string" ? item.details.updatedAt : null}
@@ -273,41 +341,27 @@ function TriageItemRow({
     ? { ...entry, checksState: undefined, reviewDecision: undefined }
     : undefined;
   return (
-    <article className="border-b last:border-b-0">
-      {rowEntry ? (
-        <PullRequestRow
-          entry={rowEntry}
-          onSelect={onSelect}
-          selected={false}
-          showProjectTitle
-          showProvider={false}
-        />
-      ) : (
-        <UnmatchedTriageRow item={item} onOpenPullRequest={onOpenPullRequest} />
-      )}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-1 pl-9 text-xs text-muted-foreground">
-        {changed ? <span className="text-primary">Changed this scan</span> : null}
-        <span className="min-w-0 truncate">{blockerSummary(item)}</span>
-        {item.nextActors.length > 0 ? <span>Next: {item.nextActors.join(", ")}</span> : null}
-        <span>{item.certainty}</span>
-        <span>{freshnessLabel(item)}</span>
-        {thread ? (
-          <Button onClick={onOpenThread} size="xs" variant="link">
-            <MessageSquareIcon />
-            Thread
-          </Button>
-        ) : null}
-        <a
-          className="inline-flex items-center gap-1 underline"
-          href={item.url}
-          rel="noreferrer"
-          target="_blank"
-        >
-          <ExternalLinkIcon className="size-3" />
-          GitHub
-        </a>
+    <article className="flex items-start">
+      <div className="min-w-0 flex-1">
+        {rowEntry ? (
+          <PullRequestRow
+            entry={rowEntry}
+            onSelect={onSelect}
+            selected={false}
+            showProjectTitle
+            showProvider={false}
+          />
+        ) : (
+          <UnmatchedTriageRow item={item} onOpenPullRequest={onOpenPullRequest} />
+        )}
       </div>
-      <TriageEvidence item={item} />
+      <div className="mr-2 mt-3 shrink-0">
+        <TriageDetails
+          item={item}
+          changed={changed}
+          onOpenThread={thread ? onOpenThread : undefined}
+        />
+      </div>
     </article>
   );
 }
@@ -441,33 +495,7 @@ export function TriageDashboard() {
         <span className="text-xs text-muted-foreground">Read only</span>
       </WorkspacePageHeader>
       <ScrollArea className="min-h-0 flex-1">
-        <main className="mx-auto flex w-full max-w-6xl flex-col gap-3 p-4 pb-12 sm:p-6">
-          <header className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h1 className="text-lg font-semibold">What needs attention</h1>
-              <p className="text-xs text-muted-foreground">
-                {earliestScanAt === null
-                  ? "No successful scans yet"
-                  : `Scan times: ${formatScanTime(earliestScanAt)}${latestScanAt === earliestScanAt ? "" : ` to ${formatScanTime(latestScanAt)}`}`}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={() => void copy()} size="sm" variant="outline">
-                <CopyIcon />
-                Copy Markdown
-              </Button>
-              <Button disabled={isRefreshing} onClick={() => void refresh()} size="sm">
-                <RefreshCwIcon />
-                {isRefreshing ? "Scanning GitHub..." : "Refresh"}
-              </Button>
-            </div>
-          </header>
-          {inferenceUnavailable ? (
-            <p className="text-xs text-muted-foreground">
-              GitHub facts are available. Discussion analysis needs AI_GATEWAY_API_KEY in the fork
-              secrets file.
-            </p>
-          ) : null}
+        <WorkspacePageContainer width="expanded" className="gap-3">
           {errors.length > 0 || reportErrors.length > 0 || refreshError ? (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               {refreshError ? <p>{refreshError}</p> : null}
@@ -476,17 +504,19 @@ export function TriageDashboard() {
               ))}
             </div>
           ) : null}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <PullRequestSearchInput
-              busy={pullRequestList.isPending}
-              onChange={setQuery}
-              placeholder="Search pull requests and issues"
-              ariaLabel="Search pull requests and issues"
-              value={query}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-48 flex-1">
+              <PullRequestSearchInput
+                busy={pullRequestList.isPending}
+                onChange={setQuery}
+                placeholder="Search pull requests and issues"
+                ariaLabel="Search pull requests and issues"
+                value={query}
+              />
+            </div>
             <select
               aria-label="Repository scope"
-              className="h-9 rounded-md border bg-background px-3 text-sm"
+              className="h-8 max-w-48 rounded-md border bg-background px-2 text-sm"
               onChange={(event) => setScope(event.target.value || null)}
               value={scope ?? ""}
             >
@@ -499,7 +529,7 @@ export function TriageDashboard() {
             </select>
             <select
               aria-label="Sort triage"
-              className="h-9 rounded-md border bg-background px-3 text-sm"
+              className="h-8 max-w-48 rounded-md border bg-background px-2 text-sm"
               onChange={(event) => setSort(event.target.value as TriageSort)}
               value={sort}
             >
@@ -507,6 +537,54 @@ export function TriageDashboard() {
               <option value="recent">Recently refreshed</option>
               <option value="repository">Repository</option>
             </select>
+            <Button
+              aria-label="Copy Markdown"
+              title="Copy Markdown"
+              onClick={() => void copy()}
+              size="icon"
+              variant="outline"
+            >
+              <CopyIcon />
+            </Button>
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    aria-label="Monitor status"
+                    title="Monitor status"
+                    size="icon"
+                    variant="outline"
+                  />
+                }
+              >
+                <InfoIcon />
+              </PopoverTrigger>
+              <PopoverPopup align="end" className="w-80">
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <p>
+                    {earliestScanAt === null
+                      ? "No successful scans yet"
+                      : `Scan times: ${formatScanTime(earliestScanAt)}${latestScanAt === earliestScanAt ? "" : ` to ${formatScanTime(latestScanAt)}`}`}
+                  </p>
+                  {inferenceUnavailable ? (
+                    <p>
+                      GitHub facts are available. Discussion analysis needs AI_GATEWAY_API_KEY in
+                      the fork secrets file.
+                    </p>
+                  ) : null}
+                </div>
+              </PopoverPopup>
+            </Popover>
+            <Button
+              aria-label={isRefreshing ? "Scanning GitHub" : "Refresh"}
+              title={isRefreshing ? "Scanning GitHub" : "Refresh"}
+              disabled={isRefreshing}
+              onClick={() => void refresh()}
+              size="icon"
+              variant="outline"
+            >
+              <RefreshCwIcon />
+            </Button>
           </div>
           {groups.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
@@ -518,11 +596,16 @@ export function TriageDashboard() {
             </p>
           ) : (
             groups.map((group) => (
-              <section key={group.classification}>
-                <h2 className="mb-1 px-3 text-xs font-medium text-muted-foreground">
-                  {group.label} <span className="tabular-nums">{group.items.length}</span>
-                </h2>
-                <div className="overflow-hidden rounded-lg border">
+              <section key={group.classification} className="space-y-0.5">
+                <div className="flex items-center gap-2 px-3 pb-1 text-xs font-medium text-muted-foreground/70">
+                  <LayersIcon aria-hidden className="size-3.5 shrink-0" />
+                  <h2 className="shrink-0">{group.label}</h2>
+                  <span className="shrink-0 tabular-nums text-muted-foreground/50">
+                    {group.items.length}
+                  </span>
+                  <span aria-hidden className="h-px min-w-2 flex-1 bg-border/60" />
+                </div>
+                <div className="space-y-0.5">
                   {group.items.map((item) => {
                     const thread = threadForItem(item, threads);
                     const entry = entriesByUrl.get(
@@ -560,7 +643,7 @@ export function TriageDashboard() {
               </section>
             ))
           )}
-        </main>
+        </WorkspacePageContainer>
       </ScrollArea>
     </SidebarInset>
   );
