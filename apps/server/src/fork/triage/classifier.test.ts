@@ -30,6 +30,19 @@ const snapshot = (overrides: Partial<GitHubItemSnapshot> = {}): GitHubItemSnapsh
 });
 
 describe("merge readiness", () => {
+  it.each(["unavailableSources", "truncatedSources"] as const)(
+    "keeps closed lifecycle but marks incomplete closure evidence uncertain for %s",
+    (source) => {
+      const result = classifySnapshot(
+        snapshot({ pull: { state: "closed" }, [source]: ["timeline"] }),
+        undefined,
+        [],
+      );
+      expect(result.lifecycle).toBe("closed");
+      expect(result.certainty).toBe("uncertain");
+      expect(result.blockers.some((blocker) => blocker.code.startsWith("evidence-"))).toBe(true);
+    },
+  );
   it("marks an unconfirmed discussion dependency on an issue as uncertain", () => {
     const result = classifySnapshot(snapshot({ kind: "issue", pull: null }), undefined, [
       {

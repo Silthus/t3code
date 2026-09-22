@@ -109,20 +109,6 @@ export const classifySnapshot = (
     ) ||
     (Array.isArray(s.item.labels) &&
       s.item.labels.some((l) => isRecord(l) && /^(stale|inactive)$/i.test(String(l.name))));
-  if (lifecycle === "merged" || lifecycle === "closed")
-    return {
-      lifecycle,
-      classification: merged
-        ? ("issue" as const)
-        : replacement
-          ? ("replaced" as const)
-          : staleClosure
-            ? ("stale-closed" as const)
-            : ("issue" as const),
-      blockers,
-      nextActors: [] as string[],
-      certainty: "factual" as const,
-    };
   if (s.truncatedSources.length)
     add(
       "evidence-truncated",
@@ -135,6 +121,20 @@ export const classifySnapshot = (
       `GitHub evidence is unavailable: ${s.unavailableSources.join(", ")}.`,
       null,
     );
+  if (lifecycle === "merged" || lifecycle === "closed")
+    return {
+      lifecycle,
+      classification: merged
+        ? ("issue" as const)
+        : replacement
+          ? ("replaced" as const)
+          : staleClosure
+            ? ("stale-closed" as const)
+            : ("issue" as const),
+      blockers,
+      nextActors: [] as string[],
+      certainty: blockers.length ? ("uncertain" as const) : ("factual" as const),
+    };
   for (const dependency of s.blockedBy) {
     if (dependency.state !== "closed") {
       add(
