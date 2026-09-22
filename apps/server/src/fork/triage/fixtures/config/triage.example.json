@@ -1,0 +1,27 @@
+{
+  "username": "Silthus",
+  "lookbackDays": 30,
+  "stalledAfterDays": 14,
+  "refreshIntervalMinutes": 15,
+  "staleAfterMinutes": 60,
+  "githubPageLimit": 20,
+  "githubConcurrency": 4,
+  "githubRetries": 2,
+  "githubTimeoutMs": 15000,
+  "inference": {
+    "enabled": true,
+    "model": "typesafe-ai/jev",
+    "configuredModelVersion": "unpinned",
+    "requestBudget": 50,
+    "dailyRequestBudget": 500,
+    "monthlyRequestBudget": 10000,
+    "dailyCostBudgetUsd": 1,
+    "monthlyCostBudgetUsd": 10,
+    "inputCostPerMillionUsd": 0.042,
+    "retries": 2,
+    "maxInputCharacters": 24000,
+    "maxInputTokens": 32000,
+    "requestTimeoutMs": 30000,
+    "confidenceThreshold": 0.85
+  }
+}

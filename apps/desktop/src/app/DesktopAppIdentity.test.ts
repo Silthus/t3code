@@ -157,6 +157,24 @@ describe("DesktopAppIdentity", () => {
     ),
   );
 
+  it.effect("uses the fork session directory when it is configured", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/tmp/t3-code-fork/user-data/t3code");
+      }),
+      {
+        environment: {
+          env: {
+            T3CODE_DESKTOP_USER_DATA_DIR: "/tmp/t3-code-fork/user-data",
+          },
+        },
+      },
+    ),
+  );
+
   it.effect("preserves failures while inspecting the legacy userData path", () => {
     const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({

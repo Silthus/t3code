@@ -44,6 +44,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly resourcesPath: string;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
+    readonly userDataDirectory: string;
     readonly baseDir: string;
     readonly stateDir: string;
     readonly desktopSettingsPath: string;
@@ -175,11 +176,12 @@ const make = Effect.fn("desktop.environment.make")(function* (
     input.isPackaged && input.platform === "win32"
       ? path.join(input.resourcesPath, "server.asar")
       : appRoot;
-  const branding = resolveDesktopAppBranding({
+  const defaultBranding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
   });
-  const displayName = branding.displayName;
+  const displayName = Option.getOrElse(config.desktopAppName, () => defaultBranding.displayName);
+  const branding = { ...defaultBranding, displayName };
   const stateDir = resolveDesktopStateDir({
     baseDir,
     isDevelopment,
@@ -206,6 +208,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     resourcesPath,
     homeDirectory,
     appDataDirectory,
+    userDataDirectory: Option.getOrElse(config.desktopUserDataDirectory, () => appDataDirectory),
     baseDir,
     stateDir,
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
