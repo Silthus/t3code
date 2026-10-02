@@ -3,7 +3,7 @@
 # Called by .github/workflows/fork-sync-upstream.yml with the exit status of
 # scripts/fork/sync-upstream.sh, from the checkout that script left behind.
 # Usage: scripts/fork/report-sync-outcome.sh <sync-exit-status>
-# Env: GH_TOKEN, GITHUB_REPOSITORY, RUN_URL, HAS_SYNC_TOKEN (true|false)
+# Env: GH_TOKEN, GITHUB_REPOSITORY, RUN_URL
 set -euo pipefail
 
 status="$1"
@@ -42,16 +42,16 @@ push_refused_body() {
   workflow_files="$(git diff --name-only origin/main HEAD -- .github/workflows)"
   echo "Upstream \`pingdotgg/t3code\` main (\`$upstream_sha\`) merged cleanly, but the push to fork \`main\` was refused."
   echo
-  if [[ -n "$workflow_files" && "$HAS_SYNC_TOKEN" != "true" ]]; then
+  if [[ -n "$workflow_files" ]]; then
     cat <<EOF
-Upstream changed workflow files, and \`GITHUB_TOKEN\` cannot push those:
+Upstream changed workflow files, which only a token with Workflows write can push:
 
 $(echo "$workflow_files" | as_list)
 
-Add a fine-grained PAT for \`$GITHUB_REPOSITORY\` with Contents and Workflows read/write as the \`FORK_SYNC_TOKEN\` secret, or run \`scripts/fork/sync-upstream.sh\` locally.
+Add or renew the \`FORK_SYNC_TOKEN\` secret: a fine-grained PAT for \`$GITHUB_REPOSITORY\` with Contents and Workflows read/write. Or run \`scripts/fork/sync-upstream.sh\` locally.
 EOF
   else
-    echo "Fork \`main\` probably moved during the run. The next scheduled sync retries."
+    echo "Fork \`main\` moved during the run, or a rule or an expired \`FORK_SYNC_TOKEN\` refused the push. The run log has git's reason."
   fi
   echo
   echo "Run: $RUN_URL"

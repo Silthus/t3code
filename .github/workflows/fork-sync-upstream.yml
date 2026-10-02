@@ -21,33 +21,39 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      # GITHUB_TOKEN cannot push upstream changes to .github/workflows.
-      # The optional FORK_SYNC_TOKEN PAT (Contents + Workflows write) can.
       - name: Checkout main
         uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.FORK_SYNC_TOKEN || github.token }}
+          persist-credentials: false
 
-      - name: Configure git identity
+      # The scripts run from a pre-merge copy, so the merge never rewrites the
+      # code that is executing. GITHUB_TOKEN cannot push upstream changes to
+      # .github/workflows; the optional FORK_SYNC_TOKEN PAT (Contents and
+      # Workflows write) can. Only the push uses the token.
+      - name: Prepare sync
+        env:
+          PUSH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN || github.token }}
         run: |
+          echo "SCRIPTS=$RUNNER_TEMP/fork-scripts" >> "$GITHUB_ENV"
+          cp -R scripts/fork "$RUNNER_TEMP/fork-scripts"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url --push origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
       - id: sync
         name: Merge and push
         run: |
           status=0
-          scripts/fork/sync-upstream.sh || status=$?
+          $SCRIPTS/sync-upstream.sh || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Report outcome
         env:
-          HAS_SYNC_TOKEN: ${{ secrets.FORK_SYNC_TOKEN != '' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: scripts/fork/report-sync-outcome.sh "${{ steps.sync.outputs.status }}"
+        run: $SCRIPTS/report-sync-outcome.sh ${{ steps.sync.outputs.status }}
 
       - name: Keep inherited workflows disabled
         if: always()
-        run: scripts/fork/quiet-upstream-workflows.sh
+        run: $SCRIPTS/quiet-upstream-workflows.sh
