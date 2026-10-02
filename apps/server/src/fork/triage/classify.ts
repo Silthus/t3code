@@ -89,7 +89,9 @@ export function classifyTriage(
 }
 
 function readPullRequest(facts: TriageFacts): PullRequestReading {
-  const waiting = openThreads(facts).filter((thread) => thread.awaitingAuthor && !thread.isOutdated);
+  const waiting = openThreads(facts).filter(
+    (thread) => thread.awaitingAuthor && !thread.isOutdated,
+  );
   const humanWaiting = waiting.filter((thread) => !thread.authorIsBot);
   return {
     facts,
@@ -116,7 +118,11 @@ function statusStep(reading: PullRequestReading): StatusStep {
   const [hardBlocker] = hardBlockers;
   const [threadBlocker] = threadBlockers;
   if (facts.isDraft) {
-    return { status: "draft", nextAction: "Finish the implementation", reasons: ["Implementation still in progress"] };
+    return {
+      status: "draft",
+      nextAction: "Finish the implementation",
+      reasons: ["Implementation still in progress"],
+    };
   }
   if (facts.review === "changes-requested") {
     return {
@@ -126,7 +132,11 @@ function statusStep(reading: PullRequestReading): StatusStep {
     };
   }
   if (hardBlocker) {
-    return { status: "blocked", nextAction: hardBlocker, reasons: [...hardBlockers, ...threadBlockers] };
+    return {
+      status: "blocked",
+      nextAction: hardBlocker,
+      reasons: [...hardBlockers, ...threadBlockers],
+    };
   }
   if (threadBlocker) {
     return {
@@ -157,13 +167,24 @@ function approvedStep({ facts, botWaiting }: PullRequestReading): StatusStep {
     };
   }
   if (ci.state === "pending" || ci.state === "none") {
-    const running = ci.pending.length > 0 ? `${plural(ci.pending.length, "check")} running` : "No check results yet";
-    return { status: "waiting-ci", nextAction: "Wait for CI to finish", reasons: [approved, running] };
+    const running =
+      ci.pending.length > 0
+        ? `${plural(ci.pending.length, "check")} running`
+        : "No check results yet";
+    return {
+      status: "waiting-ci",
+      nextAction: "Wait for CI to finish",
+      reasons: [approved, running],
+    };
   }
   return {
     status: "ready-to-merge",
     nextAction: mergeAction(facts, botWaiting),
-    reasons: [approved, ...onlyIf(facts.mergeable === "UNKNOWN", "Mergeability not computed yet"), "CI green"],
+    reasons: [
+      approved,
+      ...onlyIf(facts.mergeable === "UNKNOWN", "Mergeability not computed yet"),
+      "CI green",
+    ],
   };
 }
 
@@ -195,23 +216,33 @@ function turnOf(reading: PullRequestReading, { status, nextAction: keep }: Statu
   const { facts, humanWaiting, hardBlockers } = reading;
   switch (status) {
     case "draft":
-      return { group: "drafts", nextAction: humanWaiting.length > 0 ? answerThreads(humanWaiting) : keep };
+      return {
+        group: "drafts",
+        nextAction: humanWaiting.length > 0 ? answerThreads(humanWaiting) : keep,
+      };
     case "blocked":
       return { group: "needs-you", nextAction: keep };
     case "changes-requested":
       if (awaitsReReview(reading)) {
-        return { group: "waiting-on-others", nextAction: reReview(facts.changeRequesters.map(({ login }) => login)) };
+        return {
+          group: "waiting-on-others",
+          nextAction: reReview(facts.changeRequesters.map(({ login }) => login)),
+        };
       }
       return {
         group: "needs-you",
-        nextAction: hardBlockers.length === 0 && humanWaiting.length > 0 ? answerThreads(humanWaiting) : keep,
+        nextAction:
+          hardBlockers.length === 0 && humanWaiting.length > 0 ? answerThreads(humanWaiting) : keep,
       };
     case "ready-to-merge":
       return { group: "ready-to-merge", nextAction: keep };
     case "waiting-ci-authorization":
       return { group: "waiting-on-others", nextAction: keep };
     case "waiting-ci":
-      return { group: facts.ci.state === "cancelled" ? "needs-you" : "waiting-on-others", nextAction: keep };
+      return {
+        group: facts.ci.state === "cancelled" ? "needs-you" : "waiting-on-others",
+        nextAction: keep,
+      };
     case "ready-for-review":
       if (awaitsRequestedReviewers(facts)) {
         return { group: "waiting-on-others", nextAction: waitingOn(facts.requestedReviewers) };
@@ -231,18 +262,25 @@ function awaitsReReview({ facts, humanWaiting, hardBlockers }: PullRequestReadin
 }
 
 function awaitsRequestedReviewers({ requestedReviewers, ci }: TriageFacts): boolean {
-  return requestedReviewers.length > 0 && ci.state !== "awaiting-authorization" && ci.state !== "cancelled";
+  return (
+    requestedReviewers.length > 0 &&
+    ci.state !== "awaiting-authorization" &&
+    ci.state !== "cancelled"
+  );
 }
 
 function answerThreads(threads: ReadonlyArray<TriageThreadFacts>): string {
-  const newest = threads.reduce((latest, thread) => (thread.lastAt > latest.lastAt ? thread : latest));
+  const newest = threads.reduce((latest, thread) =>
+    thread.lastAt > latest.lastAt ? thread : latest,
+  );
   const otherAuthors = new Set(threads.map((thread) => thread.lastAuthor)).size - 1;
   return `Answer ${plural(threads.length, "thread")} from ${newest.lastAuthor}${andMore(otherAuthors)}`;
 }
 
 function reReview(names: ReadonlyArray<string>): string {
   const [first, second] = names;
-  const who = names.length === 2 ? `${first} and ${second}` : `${first}${andMore(names.length - 1)}`;
+  const who =
+    names.length === 2 ? `${first} and ${second}` : `${first}${andMore(names.length - 1)}`;
   return `${who} to re-review`;
 }
 
@@ -258,13 +296,20 @@ function blockersOf(
   return [...onlyIf(changeRequest, changesRequestedBy(facts)), ...hardBlockers, ...threadBlockers];
 }
 
-function openQuestionsOf({ facts, humanWaiting, botWaiting }: PullRequestReading): ReadonlyArray<string> {
+function openQuestionsOf({
+  facts,
+  humanWaiting,
+  botWaiting,
+}: PullRequestReading): ReadonlyArray<string> {
   return [
     ...onlyIf(
       humanWaiting.length > 0 || facts.humanComments.length > 0,
       "Do the unanswered human threads or comments ask for changes?",
     ),
-    ...onlyIf(botWaiting > 0, `Judge ${plural(botWaiting, "unanswered bot finding")}: real defect or noise?`),
+    ...onlyIf(
+      botWaiting > 0,
+      `Judge ${plural(botWaiting, "unanswered bot finding")}: real defect or noise?`,
+    ),
     ...onlyIf(facts.isDraft, "Does the description read as a finished change?"),
   ];
 }
@@ -286,7 +331,11 @@ function signalsOf(facts: TriageFacts, now: number): ReadonlyArray<string> {
 
 function refinementOf(facts: TriageFacts, viewer: string): TriageRefinement {
   if (facts.review === "approved") return "approved";
-  const reviewers = [...facts.approvers, ...facts.changeRequesters, ...facts.threads.map(threadAuthor)];
+  const reviewers = [
+    ...facts.approvers,
+    ...facts.changeRequesters,
+    ...facts.threads.map(threadAuthor),
+  ];
   if (reviewers.some(({ login, isBot }) => !isBot && login !== viewer)) return "human-reviewed";
   if (reviewers.some(({ isBot }) => isBot)) return "self-reviewed";
   return "raw";
@@ -295,8 +344,9 @@ function refinementOf(facts: TriageFacts, viewer: string): TriageRefinement {
 function countsOf(facts: TriageFacts): TriageClassification["counts"] {
   const botThreads = facts.threads.filter((thread) => thread.authorIsBot);
   return {
-    humanThreadsAwaiting: openThreads(facts).filter((thread) => !thread.authorIsBot && thread.awaitingAuthor)
-      .length,
+    humanThreadsAwaiting: openThreads(facts).filter(
+      (thread) => !thread.authorIsBot && thread.awaitingAuthor,
+    ).length,
     botFindingsOpen: botThreads.filter((thread) => !thread.isResolved).length,
     botFindingsResolved: botThreads.filter((thread) => thread.isResolved).length,
     threadsTruncated: facts.threadsTruncated,

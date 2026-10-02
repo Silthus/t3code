@@ -15,7 +15,12 @@ export const TRIAGE_STATUSES = [
 export const TriageStatus = Schema.Literals(TRIAGE_STATUSES);
 export type TriageStatus = typeof TriageStatus.Type;
 
-export const TRIAGE_GROUPS = ["needs-you", "ready-to-merge", "waiting-on-others", "drafts"] as const;
+export const TRIAGE_GROUPS = [
+  "needs-you",
+  "ready-to-merge",
+  "waiting-on-others",
+  "drafts",
+] as const;
 export const TriageGroup = Schema.Literals(TRIAGE_GROUPS);
 export type TriageGroup = typeof TriageGroup.Type;
 

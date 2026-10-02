@@ -26,7 +26,14 @@ function facts(overrides: Partial<TriageFacts> = {}): TriageFacts {
     changeRequesters: [],
     requestedReviewers: [],
     mergeable: "MERGEABLE",
-    ci: { state: "green", failing: [], cancelled: [], pending: [], awaitingAuthorization: 0, passed: 5 },
+    ci: {
+      state: "green",
+      failing: [],
+      cancelled: [],
+      pending: [],
+      awaitingAuthorization: 0,
+      passed: 5,
+    },
     trunk: { managed: true, failed: false, message: null },
     threads: [],
     threadsTruncated: false,
@@ -51,7 +58,10 @@ const botThread: TriageThreadFacts = {
   authorIsBot: true,
   lastAuthor: "coderabbitai",
 };
-const resolved = (thread: TriageThreadFacts): TriageThreadFacts => ({ ...thread, isResolved: true });
+const resolved = (thread: TriageThreadFacts): TriageThreadFacts => ({
+  ...thread,
+  isResolved: true,
+});
 const human = (login: string) => ({ login, isBot: false });
 
 const classify = (overrides: Partial<TriageFacts> = {}) =>
@@ -195,7 +205,12 @@ describe("group and next action (Postpile own-PR overlay)", () => {
   });
 
   it("G4: asks to answer human threads, naming the newest one's author", () => {
-    const fromBob = { ...humanThread, author: "bob", lastAuthor: "bob", lastAt: "2026-09-22T12:00:00Z" };
+    const fromBob = {
+      ...humanThread,
+      author: "bob",
+      lastAuthor: "bob",
+      lastAt: "2026-09-22T12:00:00Z",
+    };
     const result = classify({ threads: [humanThread, humanThread, fromBob] });
     expect(result).toMatchObject({
       status: "changes-requested",
@@ -223,8 +238,9 @@ describe("group and next action (Postpile own-PR overlay)", () => {
       group: "ready-to-merge",
       nextAction: "Comment /trunk merge",
     });
-    expect(classify({ review: "approved", trunk: { managed: false, failed: false, message: null } }))
-      .toMatchObject({ group: "ready-to-merge", nextAction: "Merge it" });
+    expect(
+      classify({ review: "approved", trunk: { managed: false, failed: false, message: null } }),
+    ).toMatchObject({ group: "ready-to-merge", nextAction: "Merge it" });
   });
 
   it("G6: waits on a maintainer to authorize CI", () => {
@@ -236,7 +252,10 @@ describe("group and next action (Postpile own-PR overlay)", () => {
   });
 
   it("G7: puts cancelled CI on the viewer", () => {
-    const result = classify({ review: "approved", ci: ci({ state: "cancelled", cancelled: ["test"] }) });
+    const result = classify({
+      review: "approved",
+      ci: ci({ state: "cancelled", cancelled: ["test"] }),
+    });
     expect(result).toMatchObject({
       status: "waiting-ci",
       group: "needs-you",
@@ -245,7 +264,10 @@ describe("group and next action (Postpile own-PR overlay)", () => {
   });
 
   it("G8: waits on running CI", () => {
-    const result = classify({ review: "approved", ci: ci({ state: "pending", pending: ["test"] }) });
+    const result = classify({
+      review: "approved",
+      ci: ci({ state: "pending", pending: ["test"] }),
+    });
     expect(result).toMatchObject({
       status: "waiting-ci",
       group: "waiting-on-others",
@@ -266,7 +288,10 @@ describe("group and next action (Postpile own-PR overlay)", () => {
   it("G10: asks the viewer to request review", () => {
     expect(classify()).toMatchObject({ group: "needs-you", nextAction: "Ask for review" });
     expect(
-      classify({ requestedReviewers: ["sol"], ci: ci({ state: "cancelled", cancelled: ["test"] }) }),
+      classify({
+        requestedReviewers: ["sol"],
+        ci: ci({ state: "cancelled", cancelled: ["test"] }),
+      }),
     ).toMatchObject({ group: "needs-you", nextAction: "Re-run CI, then ask for review" });
   });
 });
