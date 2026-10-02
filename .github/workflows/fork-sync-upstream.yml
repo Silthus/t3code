@@ -1,0 +1,53 @@
+name: Fork Sync Upstream
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: fork-sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream main
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # GITHUB_TOKEN cannot push upstream changes to .github/workflows.
+      # The optional FORK_SYNC_TOKEN PAT (Contents + Workflows write) can.
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.FORK_SYNC_TOKEN || github.token }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - id: sync
+        name: Merge and push
+        run: |
+          status=0
+          scripts/fork/sync-upstream.sh || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Report outcome
+        env:
+          HAS_SYNC_TOKEN: ${{ secrets.FORK_SYNC_TOKEN != '' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/fork/report-sync-outcome.sh "${{ steps.sync.outputs.status }}"
+
+      - name: Keep inherited workflows disabled
+        if: always()
+        run: scripts/fork/quiet-upstream-workflows.sh
