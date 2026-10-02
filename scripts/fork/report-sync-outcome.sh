@@ -30,10 +30,11 @@ Resolve it locally from a clean checkout of \`main\`:
 \`\`\`sh
 scripts/fork/sync-upstream.sh   # stops with the merge in progress
 # resolve the files above, then
-git commit --no-edit && git push origin main
+git add -u && git commit --no-edit && git push origin main
+gh workflow run fork-sync-upstream.yml -R $GITHUB_REPOSITORY
 \`\`\`
 
-The next scheduled sync closes this issue. Run: $RUN_URL
+The dispatched sync disables any workflow upstream added and closes this issue. Run: $RUN_URL
 EOF
 }
 
@@ -48,13 +49,13 @@ Upstream changed workflow files, which only a token with Workflows write can pus
 
 $(echo "$workflow_files" | as_list)
 
-Add or renew the \`FORK_SYNC_TOKEN\` secret: a fine-grained PAT for \`$GITHUB_REPOSITORY\` with Contents and Workflows read/write. Or run \`scripts/fork/sync-upstream.sh\` locally.
+Add or renew the \`FORK_SYNC_TOKEN\` secret: a fine-grained PAT for \`$GITHUB_REPOSITORY\` with Contents and Workflows read/write. Or run \`scripts/fork/sync-upstream.sh\` locally, then \`gh workflow run fork-sync-upstream.yml -R $GITHUB_REPOSITORY\`.
 EOF
   else
-    echo "Fork \`main\` moved during the run, or a rule or an expired \`FORK_SYNC_TOKEN\` refused the push. The run log has git's reason."
+    echo "Fork \`main\` moved during the run, or a rule or an expired \`FORK_SYNC_TOKEN\` refused the push."
   fi
   echo
-  echo "Run: $RUN_URL"
+  echo "The run log has git's reason. Run: $RUN_URL"
 }
 
 report_blocked() {

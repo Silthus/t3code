@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Merges upstream pingdotgg/t3code main into the fork's main and pushes it.
 # Run from a clean checkout of main. Never force-pushes. On a conflict the
-# merge stays in progress: resolve it, then `git commit && git push origin main`.
+# merge stays in progress: resolve it, then
+# `git add -u && git commit --no-edit && git push origin main`. After a push
+# from here, `gh workflow run fork-sync-upstream.yml` disables any workflow
+# that upstream added.
 # The merge commit carries [skip ci] so inherited push workflows that upstream
 # adds never fire before the sync workflow disables them.
 # Usage: scripts/fork/sync-upstream.sh

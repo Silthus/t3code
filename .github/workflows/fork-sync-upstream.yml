@@ -49,11 +49,12 @@ jobs:
           $SCRIPTS/sync-upstream.sh || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
-      - name: Report outcome
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: $SCRIPTS/report-sync-outcome.sh ${{ steps.sync.outputs.status }}
-
       - name: Keep inherited workflows disabled
         if: always()
         run: $SCRIPTS/quiet-upstream-workflows.sh
+
+      - name: Report outcome
+        if: always() && steps.sync.outputs.status != ''
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: $SCRIPTS/report-sync-outcome.sh ${{ steps.sync.outputs.status }}
