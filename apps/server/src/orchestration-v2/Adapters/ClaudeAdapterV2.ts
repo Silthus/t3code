@@ -6276,7 +6276,12 @@ export function makeClaudeAdapterV2(
             const resultFailure = interrupted
               ? null
               : providerFailureFromResult(message, failureHint, usageLimited);
-            if (!interrupted && resultFailure?.class === "usage_limit" && resetAt === null) {
+            if (
+              !interrupted &&
+              resultFailure?.class === "usage_limit" &&
+              resetAt === null &&
+              context.rejectedRateLimitTypes.size === 0
+            ) {
               context.usageLimitResetProbe = new AbortController();
               const proxyResetAt = yield* probeClaudeProxyLimitReset({
                 signal: context.usageLimitResetProbe.signal,
@@ -6291,12 +6296,7 @@ export function makeClaudeAdapterV2(
                 Effect.provideService(Path.Path, path),
               );
               delete context.usageLimitResetProbe;
-              if (proxyResetAt !== null) {
-                resetAt = resetTimes.reduce<string>(
-                  (latest, time) => (time !== null && time > latest ? time : latest),
-                  proxyResetAt,
-                );
-              }
+              resetAt = proxyResetAt;
               interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             }
             const terminalFailure = interrupted

@@ -2367,6 +2367,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const proxyResetCases: ReadonlyArray<{
     readonly name: string;
     readonly source?: "user settings" | "api key";
+    readonly settingsProfile?: boolean;
+    readonly settingsHome?: boolean;
     readonly retryAfter?: string | null;
     readonly status?: number;
     readonly native?: "complete" | "partial" | "recovered" | "overage";
@@ -2378,6 +2380,20 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
   }> = [
+    {
+      name: "profile home override",
+      source: "user settings",
+      settingsHome: true,
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "profile in user settings",
+      source: "user settings",
+      settingsProfile: true,
+      expectedReset: null,
+      expectedProbe: false,
+    },
     {
       name: "global endpoint override",
       globalSettings: true,
@@ -2413,8 +2429,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     {
       name: "partial native reset",
       native: "partial",
-      expectedReset: "1970-01-01T00:05:00.000Z",
-      expectedProbe: true,
+      expectedReset: null,
+      expectedProbe: false,
     },
     {
       name: "native reset",
@@ -2516,6 +2532,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           encodeJson({
             env: {
               ...proxyEnvironment,
+              ...(scenario.settingsProfile ? { ANTHROPIC_PROFILE: "fixture-profile" } : {}),
+              ...(scenario.settingsHome ? { XDG_CONFIG_HOME: "/fixture-other-home" } : {}),
               ...(scenario.conflictingSettings ? { ANTHROPIC_AUTH_TOKEN: "different-token" } : {}),
             },
           }),
@@ -2538,7 +2556,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         environment: {
           CLAUDE_CONFIG_DIR: configDir,
           XDG_CONFIG_HOME: configDir,
-          ...(scenario.profile ? { ANTHROPIC_CONFIG_DIR: profileDir } : {}),
           ...(scenario.source !== "user settings" ? proxyEnvironment : {}),
         },
       });
