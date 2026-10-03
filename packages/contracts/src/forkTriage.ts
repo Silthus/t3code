@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { ThreadPullRequestKey } from "./orchestration.ts";
+import { ThreadPullRequestKey } from "./threadPullRequest.ts";
 
 export const TRIAGE_STATUSES = [
   "blocked",
