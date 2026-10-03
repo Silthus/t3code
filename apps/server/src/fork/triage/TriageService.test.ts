@@ -101,7 +101,7 @@ function fakeGitHub(answers: ReadonlyArray<Answer>) {
 }
 
 const report = (refresh = false) =>
-  TriageService.TriageService.use((triage) => triage.report({ refresh }));
+  TriageService.TriageService.use((triage) => triage.report({ refresh }, "operate"));
 
 const pullRequest = (current: TriageReport, number: number): TriagePullRequest => {
   const found = current.pullRequests.find((candidate) => candidate.key.number === number);

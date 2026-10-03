@@ -102,15 +102,17 @@ export const makeJudgements = Effect.gen(function* () {
     const state = yield* generate(pr).pipe(
       Effect.flatMap((state) =>
         lock.withPermits(1)(
-          state._tag === "ready" && entries.get(idOf(pr)) === entry
-            ? store
-                .set(idOf(pr), {
-                  headSha: pr.headSha,
-                  promptVersion: PROMPT_VERSION,
-                  judgement: state.judgement,
-                })
-                .pipe(Effect.as(state))
-            : Effect.succeed(state),
+          Effect.suspend(() =>
+            state._tag === "ready" && entries.get(idOf(pr)) === entry
+              ? store
+                  .set(idOf(pr), {
+                    headSha: pr.headSha,
+                    promptVersion: PROMPT_VERSION,
+                    judgement: state.judgement,
+                  })
+                  .pipe(Effect.as(state))
+              : Effect.succeed(state),
+          ),
         ),
       ),
       Effect.catch((error) =>
@@ -136,12 +138,15 @@ export const makeJudgements = Effect.gen(function* () {
   const enqueue = Effect.fn("Triage.enqueueJudgement")(function* (
     pr: TriagePullRequest,
     manual: boolean,
+    automatic = true,
+    retry = true,
   ) {
     const id = idOf(pr);
     const previous = entries.get(id);
     if (previous?.headSha === pr.headSha && previous.state._tag === "pending") return;
     if (!manual && previous?.headSha === pr.headSha && previous.state._tag === "ready") return;
     if (!manual) {
+      if (!retry && previous?.headSha === pr.headSha) return;
       if (pr.isDraft && previous?.headSha === pr.headSha) return;
       const cached =
         previous?.headSha === pr.headSha && previous.state._tag === "failed"
@@ -159,7 +164,7 @@ export const makeJudgements = Effect.gen(function* () {
         entries.set(id, { headSha: pr.headSha, state, settled });
         return;
       }
-      if (pr.isDraft) {
+      if (pr.isDraft || !automatic) {
         if (previous?.headSha !== pr.headSha) entries.delete(id);
         return;
       }
@@ -181,8 +186,15 @@ export const makeJudgements = Effect.gen(function* () {
   };
   return {
     state,
-    synchronize: (prs: ReadonlyArray<TriagePullRequest>) =>
-      lock.withPermits(1)(Effect.forEach(prs, (pr) => enqueue(pr, false), { discard: true })),
+    synchronize: (
+      prs: ReadonlyArray<TriagePullRequest>,
+      options: { automatic: boolean; retry: boolean },
+    ) =>
+      lock.withPermits(1)(
+        Effect.forEach(prs, (pr) => enqueue(pr, false, options.automatic, options.retry), {
+          discard: true,
+        }),
+      ),
     assess: (pr: TriagePullRequest) =>
       lock.withPermits(1)(enqueue(pr, true).pipe(Effect.map(() => state(pr)))),
     awaitJudgement: (pr: TriagePullRequest) =>

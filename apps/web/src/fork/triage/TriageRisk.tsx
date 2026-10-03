@@ -39,7 +39,7 @@ function AssessButton({
   const [error, setError] = useState<string | null>(null);
   const pending = pullRequest.judgement._tag === "pending";
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
+    <span className="inline-flex max-w-40 flex-wrap items-center gap-1">
       <Button
         variant="ghost"
         size="xs"
@@ -66,7 +66,7 @@ function AssessButton({
             : "Assess"}
       </Button>
       {error ? (
-        <span role="alert" className="text-xs text-destructive">
+        <span role="alert" className="min-w-0 break-words text-xs text-destructive">
           {error}
         </span>
       ) : null}

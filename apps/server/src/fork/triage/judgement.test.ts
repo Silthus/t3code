@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
@@ -37,6 +38,7 @@ const [node] = recordedPage.data.search.nodes;
 function harness(
   options: {
     missing?: boolean;
+    changeDuringDiff?: boolean;
     store?: KeyValueStore.KeyValueStore;
     answer?: Effect.Effect<unknown, TextGenerationError>;
   } = {},
@@ -55,6 +57,8 @@ function harness(
             return Effect.fail(
               new GitHubCli.GitHubCliCommandError({ command: "gh", cwd: "/", cause: undefined }),
             );
+          if (options.changeDuringDiff)
+            nodes = nodes.map((pr) => ({ ...pr, headRefOid: "changed-during-diff" }));
           stdout = "diff --git a/billing/refund.ts b/billing/refund.ts\n+guardRetries();\n";
         } else if (args[1] === "view") stdout = encodeJson({ headRefOid: nodes[0]!.headRefOid });
         else if (stdin?.includes("pullRequest(number:"))
@@ -164,7 +168,7 @@ it.effect("automatically assesses non-drafts and leaves drafts for an explicit r
   const fake = harness();
   return Effect.gen(function* () {
     const triage = yield* TriageService.TriageService;
-    const report = yield* triage.report({ refresh: false });
+    const report = yield* triage.report({ refresh: false }, "operate");
     assert.strictEqual(report.pullRequests[0]!.judgement._tag, "pending");
     assert.strictEqual(report.pullRequests[1]!.judgement._tag, "not-requested");
     const state = yield* triage.awaitJudgement(key(100));
@@ -182,7 +186,7 @@ it.effect(
     const fake = harness();
     return Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
-      yield* triage.report({ refresh: false });
+      yield* triage.report({ refresh: false }, "operate");
       yield* triage.awaitJudgement(key(100));
       assert.strictEqual((yield* triage.assess(key(103)))._tag, "pending");
       yield* triage.assess(key(103));
@@ -201,20 +205,20 @@ it.effect("reuses a persisted current head across service restarts and assesses 
     const first = harness({ store });
     yield* Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
-      yield* triage.report({ refresh: false });
+      yield* triage.report({ refresh: false }, "operate");
       yield* triage.awaitJudgement(key(100));
     }).pipe(Effect.provide(first.layer));
     const restarted = harness({ store });
     yield* Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
       assert.strictEqual(
-        (yield* triage.report({ refresh: false })).pullRequests[0]!.judgement._tag,
+        (yield* triage.report({ refresh: false }, "operate")).pullRequests[0]!.judgement._tag,
         "ready",
       );
       assert.lengthOf(restarted.generated, 0);
       restarted.changeHead();
       assert.strictEqual(
-        (yield* triage.report({ refresh: true })).pullRequests[0]!.judgement._tag,
+        (yield* triage.report({ refresh: true }, "operate")).pullRequests[0]!.judgement._tag,
         "pending",
       );
       const state = yield* triage.awaitJudgement(key(100));
@@ -241,10 +245,10 @@ it.effect("runs only two jobs while the remaining PRs stay pending", () =>
     fake.setNodes(4);
     yield* Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
-      yield* triage.report({ refresh: false });
+      yield* triage.report({ refresh: false }, "operate");
       yield* Deferred.await(twoStarted);
       assert.strictEqual(started, 2);
-      const report = yield* triage.report({ refresh: false });
+      const report = yield* triage.report({ refresh: false }, "operate");
       assert.deepStrictEqual(
         report.pullRequests.map((pr) => pr.judgement._tag),
         ["pending", "pending", "pending", "pending"],
@@ -277,13 +281,13 @@ it.effect("keeps a failure visible during cached reads and retries on the next G
   });
   return Effect.gen(function* () {
     const triage = yield* TriageService.TriageService;
-    yield* triage.report({ refresh: false });
+    yield* triage.report({ refresh: false }, "operate");
     assert.strictEqual((yield* triage.awaitJudgement(key(100)))._tag, "failed");
     assert.strictEqual(
-      (yield* triage.report({ refresh: false })).pullRequests[0]!.judgement._tag,
+      (yield* triage.report({ refresh: false }, "operate")).pullRequests[0]!.judgement._tag,
       "failed",
     );
-    yield* triage.report({ refresh: true });
+    yield* triage.report({ refresh: true }, "operate");
     assert.strictEqual((yield* triage.awaitJudgement(key(100)))._tag, "ready");
   }).pipe(Effect.provide(fake.layer));
 });
@@ -302,13 +306,13 @@ it.effect.each([true, false])(
     });
     return Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
-      yield* triage.report({ refresh: false });
+      yield* triage.report({ refresh: false }, "operate");
       assert.deepStrictEqual(yield* triage.awaitJudgement(key(100)), {
         _tag: "unavailable",
         reason: "Risk needs Claude or Codex as the text-generation model",
       });
       assert.strictEqual(
-        (yield* triage.report({ refresh: false })).pullRequests[1]!.judgement._tag,
+        (yield* triage.report({ refresh: false }, "operate")).pullRequests[1]!.judgement._tag,
         "not-requested",
       );
     }).pipe(Effect.provide(fake.layer));
@@ -320,7 +324,7 @@ it.effect("falls back to the file list when GitHub cannot return the diff", () =
   fake.failDiff();
   return Effect.gen(function* () {
     const triage = yield* TriageService.TriageService;
-    yield* triage.report({ refresh: false });
+    yield* triage.report({ refresh: false }, "operate");
     const state = yield* triage.awaitJudgement(key(100));
     assert.strictEqual(state._tag, "ready");
     if (state._tag === "ready") assert.strictEqual(state.judgement.basis, "file list");
@@ -338,12 +342,114 @@ it.effect(
     });
     return Effect.gen(function* () {
       const triage = yield* TriageService.TriageService;
-      yield* triage.report({ refresh: false });
+      yield* triage.report({ refresh: false }, "operate");
       yield* triage.awaitJudgement(key(100));
       yield* triage.assess(key(103));
       yield* triage.awaitJudgement(key(103));
-      const current = yield* triage.report({ refresh: true });
+      const current = yield* triage.report({ refresh: true }, "operate");
       assert.strictEqual(current.pullRequests[1]!.judgement._tag, "failed");
     }).pipe(Effect.provide(fake.layer));
   },
 );
+
+it.effect(
+  "read-only reports do not start jobs, and operate reports can assess the same cached facts",
+  () => {
+    const fake = harness();
+    return Effect.gen(function* () {
+      const triage = yield* TriageService.TriageService;
+      const read = yield* triage.report({ refresh: true }, "read");
+      assert.strictEqual(read.pullRequests[0]!.judgement._tag, "not-requested");
+      assert.lengthOf(fake.generated, 0);
+      yield* triage.report({ refresh: false }, "operate");
+      assert.strictEqual((yield* triage.awaitJudgement(key(100)))._tag, "ready");
+      const cached = yield* triage.report({ refresh: true }, "read");
+      assert.strictEqual(cached.pullRequests[0]!.judgement._tag, "ready");
+      assert.lengthOf(fake.generated, 1);
+    }).pipe(Effect.provide(fake.layer));
+  },
+);
+
+it.effect("retains a cached newer head when the old job completes during refresh", () =>
+  Effect.gen(function* () {
+    const memory = yield* KeyValueStore.KeyValueStore;
+    const id = "github.com/acme/app#100";
+    const cached = {
+      headSha: "new-head",
+      promptVersion: 1,
+      judgement: {
+        ...verdict,
+        headSha: "new-head",
+        basis: "full diff",
+        judgedAt: "2026-10-03T10:00:00Z",
+      },
+    };
+    yield* memory.set(id, encodeJson(cached));
+    const getStarted = yield* Deferred.make<void>();
+    const releaseGet = yield* Deferred.make<void>();
+    const releaseAnswer = yield* Deferred.make<void>();
+    const answerDone = yield* Deferred.make<void>();
+    const answerStarted = yield* Deferred.make<void>();
+    let reads = 0;
+    const store = KeyValueStore.make({
+      ...memory,
+      get: (key) =>
+        Effect.gen(function* () {
+          if (key === id && ++reads === 2) {
+            yield* Deferred.succeed(getStarted, undefined);
+            yield* Deferred.await(releaseGet);
+          }
+          return yield* memory.get(key);
+        }),
+    });
+    const fake = harness({
+      store,
+      answer: Effect.gen(function* () {
+        yield* Deferred.succeed(answerStarted, undefined);
+        yield* Deferred.await(releaseAnswer);
+        yield* Deferred.succeed(answerDone, undefined);
+        return verdict;
+      }),
+    });
+    fake.setNodes(1);
+    yield* Effect.gen(function* () {
+      const triage = yield* TriageService.TriageService;
+      yield* triage.report({ refresh: false }, "operate");
+      const oldReceipt = yield* triage
+        .awaitJudgement(key(100))
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(answerStarted);
+      fake.changeHead();
+      const refreshing = yield* triage
+        .report({ refresh: true }, "operate")
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(getStarted);
+      const concurrent = yield* triage
+        .report({ refresh: false }, "operate")
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(releaseAnswer, undefined);
+      yield* Deferred.await(answerDone);
+      yield* Effect.yieldNow;
+      yield* Deferred.succeed(releaseGet, undefined);
+      yield* Fiber.join(refreshing);
+      yield* Fiber.join(oldReceipt);
+      const report = yield* Fiber.join(concurrent);
+      assert.strictEqual(report.pullRequests[0]!.judgement._tag, "ready");
+      assert.strictEqual(report.pullRequests[0]!.headSha, "new-head");
+      assert.deepStrictEqual(JSON.parse((yield* memory.get(id))!), cached);
+    }).pipe(Effect.provide(fake.layer));
+  }).pipe(Effect.provide(KeyValueStore.layerMemory)),
+);
+
+it.effect("refuses a diff that belongs to a head pushed during the read", () => {
+  const fake = harness({ changeDuringDiff: true });
+  return Effect.gen(function* () {
+    const triage = yield* TriageService.TriageService;
+    yield* triage.report({ refresh: false }, "operate");
+    assert.deepStrictEqual(yield* triage.awaitJudgement(key(100)), {
+      _tag: "failed",
+      reason: "The PR changed while reading its diff. Refresh before assessing it.",
+    });
+    assert.lengthOf(fake.generated, 0);
+  }).pipe(Effect.provide(fake.layer));
+});

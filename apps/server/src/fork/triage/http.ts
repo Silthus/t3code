@@ -29,8 +29,11 @@ export const forkTriageHttpApiLayer = HttpApiBuilder.group(
         "report",
         Effect.fn("environment.forkTriage.report")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
-          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
-          return yield* triage.report(args.payload);
+          const principal = yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          return yield* triage.report(
+            args.payload,
+            principal.scopes.has(AuthOrchestrationOperateScope) ? "operate" : "read",
+          );
         }),
       );
   }),
