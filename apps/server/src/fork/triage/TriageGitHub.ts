@@ -13,15 +13,17 @@ import type * as SourceControlRateLimit from "../../sourceControl/SourceControlR
 
 export const TRIAGE_HOST = "github.com";
 const SEARCH_QUERY = "is:pr is:open author:@me archived:false sort:updated-desc";
+const SEARCH_PAGE_SIZE = 25;
 export const CHECKS_PER_PAGE = 50;
 export const THREADS_PER_PAGE = 50;
 const MAX_ATTEMPTS = 4;
 const MAX_PAGE_BYTES = 8 * 1024 * 1024;
-const GATEWAY_STATUSES = new Set([502, 504]);
+const GRAPHQL_ERROR_STATUS = 200;
+const RETRYABLE_STATUSES = new Set([GRAPHQL_ERROR_STATUS, 502, 504]);
 
 const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
   viewer { login }
-  search(query: $q, type: ISSUE, first: 50, after: $after) {
+  search(query: $q, type: ISSUE, first: ${SEARCH_PAGE_SIZE}, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes { ... on PullRequest {
       number title url isDraft headRefOid createdAt updatedAt baseRefName headRefName
@@ -165,7 +167,7 @@ export const makeOpenPullRequestSearch = Effect.gen(function* () {
 
   const readPage = (after: string | null) =>
     budget.query(TRIAGE_HOST, SEARCH_DOCUMENT).pipe(
-      Effect.flatMap((query) => retryGatewayErrors(execute(query, after))),
+      Effect.flatMap((query) => retryTimeouts(execute(query, after))),
       Effect.mapError((error) => new TriageReadError({ detail: failureDetail(error) })),
       Effect.filterOrFail(
         (output) => !output.stdoutTruncated,
@@ -201,8 +203,11 @@ function failureDetail(
   error: GitHubCli.GitHubCliError | SourceControlRateLimit.SourceControlRateLimitPausedError,
 ): string {
   if (error._tag !== "GitHubCliCommandError") return error.detail;
-  return error.httpStatus === undefined
-    ? "GitHub CLI failed before GitHub answered. Check `gh auth status`."
+  if (error.httpStatus === undefined) {
+    return "GitHub CLI failed before GitHub answered. Check `gh auth status`.";
+  }
+  return error.httpStatus === GRAPHQL_ERROR_STATUS
+    ? "GitHub answered the search with a GraphQL error 4 times."
     : `GitHub CLI command failed (HTTP ${error.httpStatus}).`;
 }
 
@@ -210,23 +215,23 @@ function visibleNodes(page: SearchPage): Array<TriagePullRequestNode> {
   return page.data.search.nodes.filter((node) => node !== null);
 }
 
-function retryGatewayErrors<A>(
+function retryTimeouts<A>(
   read: Effect.Effect<A, GitHubCli.GitHubCliError>,
   attempt = 1,
 ): Effect.Effect<A, GitHubCli.GitHubCliError> {
   return read.pipe(
     Effect.catchIf(
-      (error) => attempt < MAX_ATTEMPTS && isGatewayError(error),
+      (error) => attempt < MAX_ATTEMPTS && isRetryable(error),
       () =>
         Effect.sleep(Duration.seconds(attempt)).pipe(
-          Effect.andThen(retryGatewayErrors(read, attempt + 1)),
+          Effect.andThen(retryTimeouts(read, attempt + 1)),
         ),
     ),
   );
 }
 
-function isGatewayError(error: GitHubCli.GitHubCliError): boolean {
-  return error._tag === "GitHubCliCommandError" && GATEWAY_STATUSES.has(error.httpStatus ?? 0);
+function isRetryable(error: GitHubCli.GitHubCliError): boolean {
+  return error._tag === "GitHubCliCommandError" && RETRYABLE_STATUSES.has(error.httpStatus ?? 0);
 }
 
 function responseBody(included: string): string {
