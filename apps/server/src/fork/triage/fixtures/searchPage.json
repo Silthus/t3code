@@ -1,0 +1,687 @@
+{
+  "data": {
+    "viewer": {
+      "login": "octo-viewer"
+    },
+    "search": {
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "Y3Vyc29yOjU="
+      },
+      "nodes": [
+        {
+          "number": 100,
+          "title": "Example change 1",
+          "url": "https://github.com/acme/app/pull/100",
+          "isDraft": false,
+          "headRefOid": "310b86e0b62b828562fc91c7be5380a992b2786a",
+          "createdAt": "2026-09-21T04:34:32Z",
+          "updatedAt": "2026-10-02T16:45:44Z",
+          "baseRefName": "main",
+          "headRefName": "feature/example-1",
+          "additions": 44,
+          "deletions": 0,
+          "changedFiles": 2,
+          "repository": {
+            "nameWithOwner": "acme/app"
+          },
+          "reviewDecision": "APPROVED",
+          "mergeable": "MERGEABLE",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committedDate": "2026-10-01T10:28:38Z",
+                  "statusCheckRollup": {
+                    "state": "FAILURE",
+                    "contexts": {
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-1",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-2",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-2",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-2",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        }
+                      ]
+                    }
+                  },
+                  "checkSuites": {
+                    "nodes": [
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SKIPPED"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "NEUTRAL"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "latestOpinionatedReviews": {
+            "nodes": [
+              {
+                "state": "APPROVED",
+                "author": {
+                  "__typename": "User",
+                  "login": "ada"
+                }
+              },
+              {
+                "state": "APPROVED",
+                "author": {
+                  "__typename": "User",
+                  "login": "sol"
+                }
+              }
+            ]
+          },
+          "reviewRequests": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "requestedReviewer": null
+              }
+            ]
+          },
+          "reviewThreads": {
+            "totalCount": 0,
+            "nodes": []
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "trunk-io"
+                },
+                "body": "🚫 This pull request was removed from the merge queue because it was waiting to become mergeable for too long.\n\nView the merge queue in Trunk.",
+                "createdAt": "2026-09-21T04:34:37Z"
+              },
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "coderabbitai"
+                },
+                "body": "Comment 2",
+                "createdAt": "2026-09-21T04:36:54Z"
+              },
+              {
+                "author": {
+                  "__typename": "User",
+                  "login": "kai"
+                },
+                "body": "Comment 3",
+                "createdAt": "2026-09-23T12:48:06Z"
+              }
+            ]
+          }
+        },
+        {
+          "number": 101,
+          "title": "Example change 2",
+          "url": "https://github.com/acme/app/pull/101",
+          "isDraft": false,
+          "headRefOid": "dbc0f004854457f59fb16ab863a3a1722cef553f",
+          "createdAt": "2026-10-01T04:15:04Z",
+          "updatedAt": "2026-10-03T04:26:38Z",
+          "baseRefName": "main",
+          "headRefName": "feature/example-2",
+          "additions": 866,
+          "deletions": 0,
+          "changedFiles": 11,
+          "repository": {
+            "nameWithOwner": "acme/app"
+          },
+          "reviewDecision": "REVIEW_REQUIRED",
+          "mergeable": "MERGEABLE",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committedDate": "2026-10-03T04:26:28Z",
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": {
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-3",
+                          "status": "COMPLETED",
+                          "conclusion": "NEUTRAL"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-4",
+                          "status": "COMPLETED",
+                          "conclusion": "SUCCESS"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-5",
+                          "status": "COMPLETED",
+                          "conclusion": "SUCCESS"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-6",
+                          "status": "COMPLETED",
+                          "conclusion": "SUCCESS"
+                        }
+                      ]
+                    }
+                  },
+                  "checkSuites": {
+                    "nodes": [
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "ACTION_REQUIRED"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "ACTION_REQUIRED"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "ACTION_REQUIRED"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "latestOpinionatedReviews": {
+            "nodes": []
+          },
+          "reviewRequests": {
+            "totalCount": 2,
+            "nodes": [
+              {
+                "requestedReviewer": null
+              },
+              {
+                "requestedReviewer": null
+              }
+            ]
+          },
+          "reviewThreads": {
+            "totalCount": 2,
+            "nodes": [
+              {
+                "isResolved": false,
+                "isOutdated": false,
+                "path": "src/module-1.ts",
+                "first": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "User",
+                        "login": "noor"
+                      }
+                    }
+                  ]
+                },
+                "last": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "User",
+                        "login": "octo-viewer"
+                      },
+                      "createdAt": "2026-10-01T09:21:08Z"
+                    }
+                  ]
+                }
+              },
+              {
+                "isResolved": false,
+                "isOutdated": false,
+                "path": "src/module-2.ts",
+                "first": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "User",
+                        "login": "noor"
+                      }
+                    }
+                  ]
+                },
+                "last": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "User",
+                        "login": "octo-viewer"
+                      },
+                      "createdAt": "2026-10-01T09:21:10Z"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "__typename": "User",
+                  "login": "noor"
+                },
+                "body": "Comment 1",
+                "createdAt": "2026-10-01T09:03:03Z"
+              },
+              {
+                "author": {
+                  "__typename": "User",
+                  "login": "octo-viewer"
+                },
+                "body": "Comment 2",
+                "createdAt": "2026-10-01T09:21:12Z"
+              }
+            ]
+          }
+        },
+        {
+          "number": 102,
+          "title": "Example change 3",
+          "url": "https://github.com/acme/app/pull/102",
+          "isDraft": false,
+          "headRefOid": "c8306ae139ac98f432932286151dc0ec55580eca",
+          "createdAt": "2026-10-01T10:01:22Z",
+          "updatedAt": "2026-10-03T05:04:27Z",
+          "baseRefName": "main",
+          "headRefName": "feature/example-3",
+          "additions": 432,
+          "deletions": 37,
+          "changedFiles": 10,
+          "repository": {
+            "nameWithOwner": "acme/app"
+          },
+          "reviewDecision": "REVIEW_REQUIRED",
+          "mergeable": "MERGEABLE",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committedDate": "2026-10-03T05:00:32Z",
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": {
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-7",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-8",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-9",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-10",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        }
+                      ]
+                    }
+                  },
+                  "checkSuites": {
+                    "nodes": [
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SKIPPED"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "latestOpinionatedReviews": {
+            "nodes": []
+          },
+          "reviewRequests": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "requestedReviewer": null
+              }
+            ]
+          },
+          "reviewThreads": {
+            "totalCount": 1,
+            "nodes": [
+              {
+                "isResolved": true,
+                "isOutdated": true,
+                "path": "src/module-1.ts",
+                "first": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      }
+                    }
+                  ]
+                },
+                "last": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      },
+                      "createdAt": "2026-10-01T11:42:35Z"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "trunk-io"
+                },
+                "body": "<!-- Trunk Merge -->\nMerging to `main` in this repository is managed by Trunk.",
+                "createdAt": "2026-10-01T10:01:25Z"
+              },
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "coderabbitai"
+                },
+                "body": "Comment 2",
+                "createdAt": "2026-10-01T10:13:38Z"
+              },
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "parameterai"
+                },
+                "body": "Comment 3",
+                "createdAt": "2026-10-02T06:23:21Z"
+              }
+            ]
+          }
+        },
+        {
+          "number": 103,
+          "title": "Example change 4",
+          "url": "https://github.com/acme/app/pull/103",
+          "isDraft": true,
+          "headRefOid": "934385f53d1bd0c1b8493e44d0dfd4c8e88a04bb",
+          "createdAt": "2026-10-02T18:15:12Z",
+          "updatedAt": "2026-10-02T18:27:38Z",
+          "baseRefName": "main",
+          "headRefName": "feature/example-4",
+          "additions": 969,
+          "deletions": 28,
+          "changedFiles": 15,
+          "repository": {
+            "nameWithOwner": "acme/app"
+          },
+          "reviewDecision": "REVIEW_REQUIRED",
+          "mergeable": "MERGEABLE",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committedDate": "2026-10-02T18:09:33Z",
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": {
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-8",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-9",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-10",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "check-11",
+                          "status": "COMPLETED",
+                          "conclusion": "SKIPPED"
+                        }
+                      ]
+                    }
+                  },
+                  "checkSuites": {
+                    "nodes": [
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SKIPPED"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "STARTUP_FAILURE"
+                      },
+                      {
+                        "status": "COMPLETED",
+                        "conclusion": "STARTUP_FAILURE"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "latestOpinionatedReviews": {
+            "nodes": []
+          },
+          "reviewRequests": {
+            "totalCount": 0,
+            "nodes": []
+          },
+          "reviewThreads": {
+            "totalCount": 2,
+            "nodes": [
+              {
+                "isResolved": false,
+                "isOutdated": false,
+                "path": "src/module-1.ts",
+                "first": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      }
+                    }
+                  ]
+                },
+                "last": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      },
+                      "createdAt": "2026-10-02T18:23:58Z"
+                    }
+                  ]
+                }
+              },
+              {
+                "isResolved": false,
+                "isOutdated": false,
+                "path": "src/module-2.ts",
+                "first": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      }
+                    }
+                  ]
+                },
+                "last": {
+                  "nodes": [
+                    {
+                      "author": {
+                        "__typename": "Bot",
+                        "login": "coderabbitai"
+                      },
+                      "createdAt": "2026-10-02T18:23:58Z"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "trunk-io"
+                },
+                "body": "<!-- Trunk Merge -->\nMerging to `main` in this repository is managed by Trunk.",
+                "createdAt": "2026-10-02T18:15:17Z"
+              },
+              {
+                "author": {
+                  "__typename": "Bot",
+                  "login": "coderabbitai"
+                },
+                "body": "Comment 2",
+                "createdAt": "2026-10-02T18:23:55Z"
+              }
+            ]
+          }
+        },
+        {
+          "number": 104,
+          "title": "Example change 5",
+          "url": "https://github.com/acme/app/pull/104",
+          "isDraft": true,
+          "headRefOid": "78a8efcbaaa1a9a30f9f327aa89d0b6acaaffb03",
+          "createdAt": "2025-08-15T04:42:51Z",
+          "updatedAt": "2025-08-15T04:43:07Z",
+          "baseRefName": "main",
+          "headRefName": "feature/example-5",
+          "additions": 4729,
+          "deletions": 219,
+          "changedFiles": 24,
+          "repository": {
+            "nameWithOwner": "acme/app"
+          },
+          "reviewDecision": null,
+          "mergeable": "MERGEABLE",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "committedDate": "2025-08-15T04:42:28Z",
+                  "statusCheckRollup": null,
+                  "checkSuites": {
+                    "nodes": []
+                  }
+                }
+              }
+            ]
+          },
+          "latestOpinionatedReviews": {
+            "nodes": []
+          },
+          "reviewRequests": {
+            "totalCount": 0,
+            "nodes": []
+          },
+          "reviewThreads": {
+            "totalCount": 0,
+            "nodes": []
+          },
+          "comments": {
+            "nodes": [
+              {
+                "author": {
+                  "__typename": "User",
+                  "login": "octo-viewer"
+                },
+                "body": "Comment 1",
+                "createdAt": "2025-08-15T04:43:07Z"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rateLimit": {
+      "cost": 54,
+      "limit": 5000,
+      "remaining": 4752,
+      "resetAt": "2026-10-03T06:40:20Z"
+    }
+  }
+}
