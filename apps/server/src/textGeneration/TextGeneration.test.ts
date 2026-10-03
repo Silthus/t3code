@@ -222,7 +222,7 @@ describe("TextGeneration.make", () => {
     }),
   );
 
-  it("accepts only schemas that decode the model's JSON unchanged", () => {
+  it("refuses schemas that transform the model's JSON", () => {
     type JudgementSchema = TextGeneration.JudgementGenerationInput<{
       readonly score: number;
     }>["outputSchema"];

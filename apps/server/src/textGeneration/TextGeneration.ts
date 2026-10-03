@@ -85,7 +85,7 @@ export interface ThreadTitleGenerationResult {
 export interface JudgementGenerationInput<A> {
   cwd: string;
   prompt: string;
-  /** The model answers in this schema's JSON shape, so it must decode that JSON unchanged. */
+  /** The model answers in the JSON form of the decoded type, so the schema must not transform values. */
   outputSchema: Schema.Codec<A, NoInfer<A>>;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
