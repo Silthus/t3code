@@ -207,7 +207,7 @@ function failureDetail(
     return "GitHub CLI failed before GitHub answered. Check `gh auth status`.";
   }
   return error.httpStatus === GRAPHQL_ERROR_STATUS
-    ? "GitHub answered the search with an error, likely a timeout."
+    ? "GitHub answered the search with a GraphQL error 4 times."
     : `GitHub CLI command failed (HTTP ${error.httpStatus}).`;
 }
 

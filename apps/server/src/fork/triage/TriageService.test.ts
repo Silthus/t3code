@@ -242,7 +242,7 @@ it.effect.each([
   { status: 504, error: "GitHub read failed: GitHub CLI command failed (HTTP 504)." },
   {
     status: 200,
-    error: "GitHub read failed: GitHub answered the search with an error, likely a timeout.",
+    error: "GitHub read failed: GitHub answered the search with a GraphQL error 4 times.",
   },
 ] as const)(
   "gives up after four attempts when GitHub keeps answering $status",
