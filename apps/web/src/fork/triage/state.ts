@@ -1,17 +1,19 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { loadTriageReport } from "@t3tools/client-runtime/fork/triage";
+import { assessTriagePullRequest, loadTriageReport } from "@t3tools/client-runtime/fork/triage";
 import {
+  createEnvironmentCommand,
   createEnvironmentQueryAtomFamily,
   isAtomCommandInterrupted,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, TriageReport, TriageReportInput } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../../state/environments";
 import { formatEnvironmentQueryError } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 
 const triageReport = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
@@ -19,6 +21,21 @@ const triageReport = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
   staleTimeMs: 60_000,
   execute: loadTriageReport,
 });
+
+const triageAssess = createEnvironmentCommand(connectionAtomRuntime, {
+  label: "fork-triage:assess",
+  execute: assessTriagePullRequest,
+});
+
+export function useAssessTriage() {
+  const assess = useAtomCommand(triageAssess, { reportFailure: false });
+  const environmentId = useTriageEnvironmentId();
+  return { assess, environmentId };
+}
+
+export function useReloadTriage(environmentId: EnvironmentId) {
+  return useAtomRefresh(triageReport({ environmentId, input: CACHED_READ }));
+}
 
 const CACHED_READ: TriageReportInput = { refresh: false };
 const GITHUB_READ: TriageReportInput = { refresh: true };
@@ -76,8 +93,16 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
     }
   };
 
+  const report = Option.getOrNull(AsyncResult.value(result));
+  const pending = report?.pullRequests.some((pr) => pr.judgement._tag === "pending") ?? false;
+  useEffect(() => {
+    if (!pending) return;
+    const timer = window.setInterval(reload, 10_000);
+    return () => window.clearInterval(timer);
+  }, [pending, reload]);
+
   return {
-    report: Option.getOrNull(AsyncResult.value(result)),
+    report,
     loadError:
       result._tag === "Failure"
         ? formatEnvironmentQueryError(result.cause)

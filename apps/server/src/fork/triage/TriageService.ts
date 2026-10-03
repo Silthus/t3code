@@ -1,4 +1,10 @@
-import type { TriagePullRequest, TriageReport, TriageReportInput } from "@t3tools/contracts";
+import type {
+  TriageAssessInput,
+  TriageJudgementState,
+  TriagePullRequest,
+  TriageReport,
+  TriageReportInput,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -8,22 +14,22 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
+import { makeJudgements } from "./judgement.ts";
+
 import { classifyTriage } from "./classify.ts";
 import { toFacts } from "./facts.ts";
 import type { TriageFacts } from "./facts.types.ts";
 import { makeOpenPullRequestSearch, type TriageSearch } from "./TriageGitHub.ts";
 
 const FRESH_FOR = Duration.minutes(2);
-const JUDGEMENT_NOT_BUILT = {
-  _tag: "unavailable",
-  reason: "Risk judgement is not built yet",
-} as const;
 
 export class TriageService extends Context.Service<
   TriageService,
   {
     /** The viewer's open PRs, classified. Never fails: a failed read keeps the last good PRs. */
     readonly report: (input: TriageReportInput) => Effect.Effect<TriageReport>;
+    readonly assess: (key: TriageAssessInput) => Effect.Effect<TriageJudgementState>;
+    readonly awaitJudgement: (key: TriageAssessInput) => Effect.Effect<TriageJudgementState>;
   }
 >()("t3/fork/triage/TriageService") {}
 
@@ -39,6 +45,7 @@ const EMPTY: Snapshot = {
 
 const make = Effect.gen(function* () {
   const search = yield* makeOpenPullRequestSearch;
+  const judgements = yield* makeJudgements;
   const snapshot = yield* Ref.make(EMPTY);
   const inFlight = yield* Ref.make<Deferred.Deferred<TriageReport> | null>(null);
 
@@ -50,6 +57,7 @@ const make = Effect.gen(function* () {
         ? { report: reportOf(result.success, now), readAt: now }
         : { report: { ...previous.report, error: result.failure.message }, readAt: now },
     );
+    if (result._tag === "Success") yield* judgements.synchronize(next.report.pullRequests);
     return next.report;
   });
 
@@ -74,10 +82,39 @@ const make = Effect.gen(function* () {
     const { report: cached, readAt } = yield* Ref.get(snapshot);
     const now = yield* Clock.currentTimeMillis;
     const fresh = readAt !== null && now - readAt < Duration.toMillis(FRESH_FOR);
-    return input.refresh || !fresh ? yield* sharedRead : cached;
+    const current = input.refresh || !fresh ? yield* sharedRead : cached;
+    return {
+      ...current,
+      pullRequests: current.pullRequests.map((pr) => ({ ...pr, judgement: judgements.state(pr) })),
+    };
   });
 
-  return TriageService.of({ report });
+  const find = (key: TriageAssessInput) =>
+    Ref.get(snapshot).pipe(
+      Effect.map(({ report }) =>
+        report.pullRequests.find(
+          (pr) =>
+            pr.key.host === key.host &&
+            pr.key.repository === key.repository &&
+            pr.key.number === key.number,
+        ),
+      ),
+    );
+  const missing = {
+    _tag: "failed",
+    reason: "This PR is no longer in the triage report. Refresh the list.",
+  } as const;
+  return TriageService.of({
+    report,
+    assess: (key) =>
+      find(key).pipe(
+        Effect.flatMap((pr) => (pr ? judgements.assess(pr) : Effect.succeed(missing))),
+      ),
+    awaitJudgement: (key) =>
+      find(key).pipe(
+        Effect.flatMap((pr) => (pr ? judgements.awaitJudgement(pr) : Effect.succeed(missing))),
+      ),
+  });
 });
 
 export const layer = Layer.effect(TriageService, make);
@@ -112,6 +149,6 @@ function triagePullRequest(facts: TriageFacts, viewer: string, now: number): Tri
     mergeable: facts.mergeable,
     requestedReviewers: facts.requestedReviewers,
     ...classifyTriage(facts, viewer, now),
-    judgement: JUDGEMENT_NOT_BUILT,
+    judgement: { _tag: "not-requested" },
   };
 }

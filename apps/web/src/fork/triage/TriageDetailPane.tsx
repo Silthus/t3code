@@ -35,6 +35,8 @@ const MERGEABLE_LABELS: Record<TriageMergeable, string> = {
   UNKNOWN: "Not computed yet",
 };
 
+import { TriageRiskDetail } from "./TriageRisk";
+
 function getShortcutContext() {
   return {
     terminalFocus: isTerminalFocused(),
@@ -236,7 +238,12 @@ export function TriageDetailPane({
       <TriageHeader
         pullRequest={pullRequest}
         onClose={onClose}
-        headerSlot={headerSlot}
+        headerSlot={
+          <>
+            {headerSlot}
+            <TriageRiskDetail pullRequest={pullRequest} environmentId={triageEnvironmentId} />
+          </>
+        }
         actionsSlot={actionsSlot}
         className={
           panelTarget === null

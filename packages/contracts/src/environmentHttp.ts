@@ -41,7 +41,12 @@ import {
   OrchestrationV2ThreadDetailSnapshot,
   OrchestrationV2ThreadHistoryPage,
 } from "./orchestrationV2.ts";
-import { TriageReport, TriageReportInput } from "./forkTriage.ts";
+import {
+  TriageAssessInput,
+  TriageJudgementState,
+  TriageReport,
+  TriageReportInput,
+} from "./forkTriage.ts";
 import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
 import {
   PullRequestDiffInput,
@@ -653,6 +658,12 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   ) {}
 
 class EnvironmentForkTriageHttpApi extends HttpApiGroup.make("forkTriage").add(
+  HttpApiEndpoint.post("assess", "/api/fork/triage/assess", {
+    headers: OptionalBearerHeaders,
+    payload: TriageAssessInput,
+    success: TriageJudgementState,
+    error: [EnvironmentAuthInvalidError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
   HttpApiEndpoint.post("report", "/api/fork/triage/report", {
     headers: OptionalBearerHeaders,
     payload: TriageReportInput,

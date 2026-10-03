@@ -21,6 +21,8 @@ import { Badge } from "~/components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
+import { TriageRiskRow } from "./TriageRisk";
+
 type BadgeVariant = "error" | "warning" | "success" | "info" | "outline";
 
 const STATUS_PRESENTATION: Record<TriageStatus, { label: string; variant: BadgeVariant }> = {
@@ -183,7 +185,7 @@ export function TriageRow({
 }) {
   const { repository, number } = pullRequest.key;
   return (
-    <li>
+    <li className="flex items-center gap-2">
       <button
         type="button"
         data-triage-row={rowId(pullRequest)}
@@ -214,6 +216,9 @@ export function TriageRow({
           <Signals pullRequest={pullRequest} />
         </span>
       </button>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        <TriageRiskRow pullRequest={pullRequest} />
+      </span>
     </li>
   );
 }
