@@ -1,4 +1,9 @@
-import type { EnvironmentId, TriageGroup, TriageReport } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  TriageGroup,
+  TriagePullRequest,
+  TriageReport,
+} from "@t3tools/contracts";
 import { CircleAlertIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -14,7 +19,7 @@ import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
-import { groupTriagePullRequests } from "./grouping.logic";
+import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
 import { TriageRow } from "./TriageRow";
 import { useTriageEnvironmentId, useTriageReport, type TriageReportView } from "./state";
 
@@ -43,8 +48,7 @@ function UpdatedLabel({ updating, fetchedAt }: { updating: boolean; fetchedAt: s
   return <span>Updated {formatRelativeTimeLabel(fetchedAt)}</span>;
 }
 
-function GroupCounts({ report }: { report: TriageReport }) {
-  const groups = useMemo(() => groupTriagePullRequests(report.pullRequests), [report]);
+function GroupCounts({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup> }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {groups.map(({ group, pullRequests }) => (
@@ -65,8 +69,7 @@ function ErrorLine({ message }: { message: string }) {
   );
 }
 
-function TriageGroups({ report }: { report: TriageReport }) {
-  const groups = useMemo(() => groupTriagePullRequests(report.pullRequests), [report]);
+function TriageGroups({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup> }) {
   if (groups.length === 0) {
     return <p className="text-sm text-muted-foreground">No open pull requests of yours.</p>;
   }
@@ -87,7 +90,22 @@ function TriageGroups({ report }: { report: TriageReport }) {
   ));
 }
 
-function TriageBody({ view }: { view: TriageReportView }) {
+function ReadFailure({ report }: { report: TriageReport }) {
+  if (report.error === null) return null;
+  return report.fetchedAt === null ? (
+    <ErrorLine message={`GitHub read failed: ${report.error}`} />
+  ) : (
+    <ErrorLine message={`GitHub read failed, showing the last good list: ${report.error}`} />
+  );
+}
+
+function TriageBody({
+  view,
+  groups,
+}: {
+  view: TriageReportView;
+  groups: ReadonlyArray<TriagePullRequestGroup>;
+}) {
   const { report, loadError } = view;
   if (report === null) {
     if (loadError !== null) return <ErrorLine message={loadError} />;
@@ -95,16 +113,20 @@ function TriageBody({ view }: { view: TriageReportView }) {
   }
   return (
     <>
-      {report.error !== null ? (
-        <ErrorLine message={`GitHub read failed, showing the last good list: ${report.error}`} />
-      ) : null}
+      <ReadFailure report={report} />
       {loadError !== null ? <ErrorLine message={loadError} /> : null}
-      <TriageGroups report={report} />
+      {report.fetchedAt !== null ? <TriageGroups groups={groups} /> : null}
     </>
   );
 }
 
-function TriageHeader({ view }: { view: TriageReportView | null }) {
+function TriageHeader({
+  view,
+  groups,
+}: {
+  view: TriageReportView | null;
+  groups: ReadonlyArray<TriagePullRequestGroup>;
+}) {
   return (
     <WorkspacePageHeader electron={isElectron} className="h-auto min-h-(--workspace-topbar-height)">
       <WorkspaceBreadcrumb ariaLabel="Triage breadcrumb">
@@ -112,7 +134,7 @@ function TriageHeader({ view }: { view: TriageReportView | null }) {
           <h1 className="truncate">Triage</h1>
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
-      {view?.report ? <GroupCounts report={view.report} /> : null}
+      <GroupCounts groups={groups} />
       <span className="ms-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
         {view ? (
           <>
@@ -134,15 +156,19 @@ function TriageHeader({ view }: { view: TriageReportView | null }) {
   );
 }
 
+const NO_PULL_REQUESTS: ReadonlyArray<TriagePullRequest> = [];
+
 function TriageLayout({ view }: { view: TriageReportView | null }) {
+  const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
+  const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <TriageHeader view={view} />
+        <TriageHeader view={view} groups={groups} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <WorkspacePageContainer width="wide" className="gap-5">
             {view ? (
-              <TriageBody view={view} />
+              <TriageBody view={view} groups={groups} />
             ) : (
               <p className="text-sm text-muted-foreground">Connect an environment to see triage.</p>
             )}

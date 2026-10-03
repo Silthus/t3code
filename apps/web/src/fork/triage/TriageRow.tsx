@@ -27,7 +27,7 @@ const STATUS_PRESENTATION: Record<TriageStatus, { label: string; variant: BadgeV
   blocked: { label: "Blocked", variant: "error" },
   "changes-requested": { label: "Changes requested", variant: "warning" },
   "ready-to-merge": { label: "Ready to merge", variant: "success" },
-  "waiting-ci-authorization": { label: "Waiting on CI authorization", variant: "info" },
+  "waiting-ci-authorization": { label: "Awaiting CI authorization", variant: "info" },
   "waiting-ci": { label: "Waiting on CI", variant: "info" },
   "ready-for-review": { label: "Ready for review", variant: "outline" },
   draft: { label: "Draft", variant: "outline" },
@@ -71,6 +71,12 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+function botFindingsLabel(counts: TriagePullRequest["counts"]): string {
+  return counts.botFindingsOpen > 0
+    ? plural(counts.botFindingsOpen, "finding")
+    : plural(counts.botFindingsResolved, "resolved finding");
+}
+
 function WithTooltip({ tip, children }: { tip: ReactNode; children: ReactNode }) {
   return (
     <Tooltip>
@@ -87,7 +93,11 @@ function RefinementLadder({ refinement }: { refinement: TriageRefinement }) {
   const current = REFINEMENT_LADDER[reached];
   return (
     <WithTooltip tip={`Refinement: ${current?.label ?? refinement}`}>
-      <span aria-label={`Refinement: ${current?.label ?? refinement}`} className="flex gap-0.5">
+      <span
+        role="img"
+        aria-label={`Refinement: ${current?.label ?? refinement}`}
+        className="flex gap-0.5"
+      >
         {REFINEMENT_LADDER.map((step, index) => (
           <span
             key={step.level}
@@ -138,7 +148,7 @@ function Signals({ pullRequest }: { pullRequest: TriagePullRequest }) {
           tip={`${counts.botFindingsOpen} open, ${counts.botFindingsResolved} resolved bot findings${truncated}`}
         >
           <BotIcon aria-hidden className="size-3.5" />
-          {plural(counts.botFindingsOpen, "finding")}
+          {botFindingsLabel(counts)}
         </WithTooltip>
       ) : null}
     </span>
@@ -159,7 +169,7 @@ export function TriageRow({ pullRequest }: { pullRequest: TriagePullRequest }) {
         >
           {pullRequest.title}
         </a>
-        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+        <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
           {repository}#{number}
         </span>
         <span className="ms-auto flex shrink-0 items-center gap-2">

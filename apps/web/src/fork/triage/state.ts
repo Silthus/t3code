@@ -1,6 +1,9 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { loadTriageReport } from "@t3tools/client-runtime/fork/triage";
-import { createEnvironmentQueryAtomFamily } from "@t3tools/client-runtime/state/runtime";
+import {
+  createEnvironmentQueryAtomFamily,
+  isAtomCommandInterrupted,
+} from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, TriageReport, TriageReportInput } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -40,11 +43,18 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
   const reload = useAtomRefresh(atom);
   const runGitHubRead = useAtomQueryRunner(triageReport, { refresh: true, reportFailure: false });
   const [readingGitHub, setReadingGitHub] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const refreshFromGitHub = async () => {
     setReadingGitHub(true);
     try {
-      await runGitHubRead({ environmentId, input: GITHUB_READ });
+      const read = await runGitHubRead({ environmentId, input: GITHUB_READ });
+      if (read._tag === "Failure") {
+        if (!isAtomCommandInterrupted(read))
+          setRefreshError(formatEnvironmentQueryError(read.cause));
+        return;
+      }
+      setRefreshError(null);
       reload();
     } finally {
       setReadingGitHub(false);
@@ -53,7 +63,7 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
 
   return {
     report: Option.getOrNull(AsyncResult.value(result)),
-    loadError: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : null,
+    loadError: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : refreshError,
     updating: result.waiting || readingGitHub,
     reload,
     refreshFromGitHub,
