@@ -2576,7 +2576,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
       }
       const harness = yield* makeWakeHarnessWithOptions({
-        launchArgs: scenario.launchArgs,
+        ...(scenario.launchArgs === undefined ? {} : { launchArgs: scenario.launchArgs }),
         environment: {
           CLAUDE_CONFIG_DIR: configDir,
           XDG_CONFIG_HOME: configDir,
