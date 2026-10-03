@@ -64,6 +64,8 @@ rm -rf "$target"
 mv "$staging/$app_name" "$target"
 echo "Installed $target"
 
+# A shell inside an Electron app, such as an agent in T3 Code, can carry
+# ELECTRON_RUN_AS_NODE, which open passes on and which starts the fork as Node.
 if [[ "$was_running" == "quit" ]]; then
-  open "$target"
+  env -u ELECTRON_RUN_AS_NODE open "$target"
 fi
