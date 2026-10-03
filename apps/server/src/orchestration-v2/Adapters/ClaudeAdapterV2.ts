@@ -2665,6 +2665,7 @@ interface ActiveClaudeTurnContext {
   latestAssistantRateLimited: boolean;
   usageLimitResetProbe?: AbortController;
   proxyModel?: string;
+  proxyModelUncertain?: boolean;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
   readonly subagentNodesByTaskId: Map<string, OrchestrationV2ExecutionNode["id"]>;
@@ -5522,6 +5523,14 @@ export function makeClaudeAdapterV2(
             context.proxyModel = message.model;
           }
 
+          if (
+            message.type === "system" &&
+            "fallback_model" in message &&
+            (!("scope" in message) || message.scope !== "local")
+          ) {
+            context.proxyModelUncertain = true;
+          }
+
           // Subagent narration belongs to its child thread, never the parent log.
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
@@ -6315,7 +6324,8 @@ export function makeClaudeAdapterV2(
               !interrupted &&
               resultFailure?.class === "usage_limit" &&
               resetAt === null &&
-              context.rejectedRateLimitTypes.size === 0
+              context.rejectedRateLimitTypes.size === 0 &&
+              !context.proxyModelUncertain
             ) {
               context.usageLimitResetProbe = new AbortController();
               const proxyResetAt = yield* probeClaudeProxyLimitReset({

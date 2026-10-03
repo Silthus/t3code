@@ -42,11 +42,16 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
   if (input.cwd === null) return null;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const inheritedConfigDir = input.environment.CLAUDE_CONFIG_DIR?.trim();
-  const configDir =
-    !input.settings.homePath.trim() && inheritedConfigDir
-      ? path.resolve(input.cwd, inheritedConfigDir)
-      : yield* resolveClaudeHomePath(input.settings, input.environment);
+  const kernel = yield* fileSystem
+    .readFileString("/proc/version")
+    .pipe(Effect.orElseSucceed(() => null));
+  if (kernel === null || /microsoft|wsl/i.test(kernel)) return null;
+
+  const providerHome = input.environment.HOME ?? NodeOS.homedir();
+  const inheritedConfigDir = input.environment.CLAUDE_CONFIG_DIR;
+  const configDir = input.settings.homePath.trim()
+    ? yield* resolveClaudeHomePath(input.settings, input.environment)
+    : path.resolve(input.cwd, inheritedConfigDir || path.join(providerHome, ".claude"));
   const environment = { ...input.environment };
   const profileDir =
     environment.ANTHROPIC_CONFIG_DIR ??
@@ -64,7 +69,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     ? path.join(configDir, ".config.json")
     : input.settings.homePath.trim() || environment.CLAUDE_CONFIG_DIR
       ? path.join(configDir, ".claude.json")
-      : path.join(NodeOS.homedir(), ".claude.json");
+      : path.join(providerHome, ".claude.json");
   if (yield* fileSystem.exists(globalConfigPath)) {
     const globalSettings = yield* fileSystem.readFileString(globalConfigPath).pipe(
       Effect.flatMap(decodeSettings),
@@ -73,7 +78,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     if (
       globalSettings === null ||
       Object.keys(globalSettings.env ?? {}).some((key) =>
-        /^(ANTHROPIC_|CLAUDE_CODE_|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS)/.test(
+        /^(ANTHROPIC_|CLAUDE_CODE_|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS)/.test(
           key,
         ),
       )
@@ -135,7 +140,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     for (const [key, value] of Object.entries(settings.env ?? {})) {
       if ((key === "HOME" || key === "XDG_CONFIG_HOME") && environment[key] !== value) return null;
       if (
-        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         )
       )
@@ -148,7 +153,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     Object.entries(environment).some(
       ([key, value]) =>
         value &&
-        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         ),
     )

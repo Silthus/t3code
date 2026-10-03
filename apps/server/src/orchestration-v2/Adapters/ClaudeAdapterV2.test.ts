@@ -2050,6 +2050,31 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       return yield* Effect.die(`Timed out waiting for ${label}.`);
     });
 
+  const proxyFixtureFileSystem = (
+    fileSystem: FileSystem.FileSystem,
+    root: string,
+    kernel = "Linux synthetic fixture",
+  ) => {
+    const fixturePath = (filePath: string) =>
+      filePath.startsWith("/etc/claude-code/")
+        ? `${root}/managed/${filePath.slice("/etc/claude-code/".length)}`
+        : filePath;
+    return {
+      ...fileSystem,
+      exists: (filePath: string) => {
+        const resolved = fixturePath(filePath);
+        return resolved.startsWith(`${root}/`)
+          ? fileSystem.exists(resolved)
+          : Effect.succeed(false);
+      },
+      readFileString: (filePath: string) =>
+        filePath === "/proc/version"
+          ? Effect.succeed(kernel)
+          : fileSystem.readFileString(fixturePath(filePath)),
+      readDirectory: (filePath: string) => fileSystem.readDirectory(fixturePath(filePath)),
+    };
+  };
+
   const makeWakeHarnessWithOptions = (options?: {
     readonly launchArgs?: string;
     readonly close?: (sdkMessages: Queue.Queue<SDKMessage>) => Effect.Effect<void>;
@@ -2387,6 +2412,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly launchArgs?: string;
     readonly environment?: NodeJS.ProcessEnv;
     readonly relativeConfig?: boolean;
+    readonly literalConfig?: boolean;
+    readonly defaultProviderHome?: boolean;
+    readonly kernel?: string;
+    readonly managedPolicy?: "base" | "drop-in";
     readonly source?: "user settings" | "project settings" | "api key";
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
@@ -2401,6 +2430,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly globalSettings?: boolean;
     readonly profile?: boolean;
     readonly resolvedModel?: string;
+    readonly modelFallback?: "model_fallback" | "model_refusal_fallback";
+    readonly localFallback?: boolean;
     readonly platform?: NodeJS.Platform;
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
@@ -2439,6 +2470,66 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
       ),
     ),
+    ...(["model_fallback", "model_refusal_fallback"] as const).map((modelFallback) => ({
+      name: `${modelFallback} request model is uncertain`,
+      resolvedModel: "proxy-original-model",
+      modelFallback,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
+    {
+      name: "local refusal fallback leaves main request model intact",
+      resolvedModel: "proxy-original-model",
+      modelFallback: "model_refusal_fallback",
+      localFallback: true,
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "provider HOME hides request body override",
+      defaultProviderHome: true,
+      settingsEnv: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' },
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "provider HOME supplies default settings",
+      defaultProviderHome: true,
+      source: "user settings",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "literal config directory keeps whitespace",
+      literalConfig: true,
+      source: "user settings",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    ...["WSL_DISTRO_NAME", "WSL_INTEROP"].flatMap((key) =>
+      ([undefined, "user settings", "global settings"] as const).map((source) => ({
+        name: `${source ?? "inherited"} ${key} managed policy`,
+        ...(source === "user settings" ? { source } : {}),
+        ...(source === undefined
+          ? { environment: { [key]: "synthetic-wsl" } }
+          : { settingsEnv: { [key]: "synthetic-wsl" } }),
+        ...(source === "global settings" ? { globalSettings: true } : {}),
+        expectedReset: null,
+        expectedProbe: false,
+      })),
+    ),
+    ...["Linux Microsoft synthetic kernel", "Linux WSL synthetic kernel"].map((kernel) => ({
+      name: `managed policy kernel ${kernel}`,
+      kernel,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
+    ...(["base", "drop-in"] as const).map((managedPolicy) => ({
+      name: `synthetic managed ${managedPolicy} request body override`,
+      managedPolicy,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
     {
       name: "project settings proxy credentials",
       source: "project settings",
@@ -2720,7 +2811,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const fs = yield* FileSystem.FileSystem;
       const root = yield* fs.makeTempDirectoryScoped();
       const cwd = `${root}/workspace`;
-      const configDir = scenario.relativeConfig ? `${cwd}/.proxy-config` : root;
+      const configDir = scenario.defaultProviderHome
+        ? `${root}/provider-home/.claude`
+        : scenario.literalConfig
+          ? `${root}/ config `
+          : scenario.relativeConfig
+            ? `${cwd}/.proxy-config`
+            : root;
       yield* fs.makeDirectory(cwd, { recursive: true });
       yield* fs.makeDirectory(configDir, { recursive: true });
       const proxyEnvironment = {
@@ -2732,6 +2829,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (
         scenario.source === "user settings" ||
         scenario.source === "project settings" ||
+        scenario.defaultProviderHome ||
         scenario.conflictingSettings
       ) {
         const settingsDir = scenario.source === "project settings" ? `${cwd}/.claude` : configDir;
@@ -2756,6 +2854,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           `${configDir}/.claude.json`,
           encodeJson({ env: scenario.settingsEnv ?? { ANTHROPIC_AUTH_TOKEN: "different-token" } }),
         );
+      if (scenario.managedPolicy) {
+        const filePath =
+          scenario.managedPolicy === "base"
+            ? `${root}/managed/managed-settings.json`
+            : `${root}/managed/managed-settings.d/override.json`;
+        const path = yield* Path.Path;
+        yield* fs.makeDirectory(path.dirname(filePath), { recursive: true });
+        yield* fs.writeFileString(
+          filePath,
+          encodeJson({ env: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' } }),
+        );
+      }
       const profileDir = `${configDir}/anthropic`;
       if (scenario.profile) {
         yield* fs.makeDirectory(`${profileDir}/configs`, { recursive: true });
@@ -2767,14 +2877,21 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const harness = yield* makeWakeHarnessWithOptions({
         ...(scenario.launchArgs === undefined ? {} : { launchArgs: scenario.launchArgs }),
         environment: {
-          CLAUDE_CONFIG_DIR: scenario.relativeConfig ? ".proxy-config" : configDir,
+          ...(scenario.defaultProviderHome
+            ? { HOME: `${root}/provider-home` }
+            : { CLAUDE_CONFIG_DIR: scenario.relativeConfig ? ".proxy-config" : configDir }),
           XDG_CONFIG_HOME: configDir,
           ...(scenario.source === "user settings" || scenario.source === "project settings"
             ? {}
             : proxyEnvironment),
           ...scenario.environment,
         },
-      });
+      }).pipe(
+        Effect.provideService(
+          FileSystem.FileSystem,
+          proxyFixtureFileSystem(fs, root, scenario.kernel),
+        ),
+      );
       yield* harness.runtime.startTurn(
         makeClaudeTestTurnInput({
           threadId: harness.threadId,
@@ -2794,6 +2911,22 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "init",
             model: scenario.resolvedModel,
             uuid: "00000000-0000-4000-8000-000000000699",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      if (scenario.modelFallback)
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: scenario.modelFallback,
+            original_model: "proxy-original-model",
+            fallback_model: "proxy-fallback-model",
+            trigger: "refusal",
+            direction: "retry",
+            scope: scenario.localFallback ? "local" : "session",
+            request_id: null,
+            uuid: "00000000-0000-4000-8000-000000000698",
             session_id: WAKE_NATIVE_SESSION,
           }),
         );
@@ -2908,8 +3041,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       const fs = yield* FileSystem.FileSystem;
       const configDir = yield* fs.makeTempDirectoryScoped();
+      const fixtureFileSystem = proxyFixtureFileSystem(fs, configDir);
       const probeFileSystem = {
-        ...fs,
+        ...fixtureFileSystem,
         exists: (filePath: string) =>
           phase === "configuration" && filePath === `${configDir}/anthropic/active_config`
             ? Deferred.succeed(requested, undefined).pipe(
@@ -2917,7 +3051,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 Effect.interruptible,
                 Effect.ensuring(Deferred.succeed(requestClosed, undefined)),
               )
-            : fs.exists(filePath),
+            : fixtureFileSystem.exists(filePath),
       };
       const harness = yield* makeWakeHarnessWithOptions({
         close: (messages) => Queue.shutdown(messages),
