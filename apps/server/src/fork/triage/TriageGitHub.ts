@@ -3,14 +3,18 @@ import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "@t3tools/contracts";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 import { encodeGraphQlRequestJson } from "../../pullRequest/gitHubPullRequestJson.ts";
 import * as GitHubCli from "../../sourceControl/GitHubCli.ts";
 import * as GitHubGraphQlBudget from "../../sourceControl/githubGraphQlBudget.ts";
+import type * as SourceControlRateLimit from "../../sourceControl/SourceControlRateLimit.ts";
 
 export const TRIAGE_HOST = "github.com";
 const SEARCH_QUERY = "is:pr is:open author:@me archived:false sort:updated-desc";
+export const CHECKS_PER_PAGE = 50;
+export const THREADS_PER_PAGE = 50;
 const MAX_ATTEMPTS = 4;
 const MAX_PAGE_BYTES = 8 * 1024 * 1024;
 const GATEWAY_STATUSES = new Set([502, 504]);
@@ -25,14 +29,14 @@ const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
       repository { nameWithOwner }
       reviewDecision mergeable
       commits(last: 1) { nodes { commit { committedDate
-        statusCheckRollup { state contexts(first: 50) { totalCount nodes { __typename
+        statusCheckRollup { state contexts(first: ${CHECKS_PER_PAGE}) { totalCount nodes { __typename
           ... on CheckRun { name status conclusion }
           ... on StatusContext { context state } } } }
         checkSuites(first: 20) { nodes { status conclusion } } } } }
       latestOpinionatedReviews(first: 20) { nodes { state author { __typename login } } }
       reviewRequests(first: 10) { totalCount nodes { requestedReviewer { __typename
         ... on User { login } ... on Bot { login } ... on Team { name } } } }
-      reviewThreads(first: 50) { totalCount nodes { isResolved isOutdated path
+      reviewThreads(first: ${THREADS_PER_PAGE}) { totalCount nodes { isResolved isOutdated path
         first: comments(first: 1) { nodes { author { __typename login } } }
         last: comments(last: 1) { nodes { author { __typename login } createdAt } } } }
       comments(last: 10) { nodes { author { __typename login } body createdAt } }
@@ -55,19 +59,19 @@ const CheckContext = Schema.Struct({
 });
 
 const PullRequestNode = Schema.Struct({
-  number: Schema.Int,
-  title: Schema.String,
-  url: Schema.String,
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
   isDraft: Schema.Boolean,
-  headRefOid: Schema.String,
+  headRefOid: TrimmedNonEmptyString,
   createdAt: Schema.String,
   updatedAt: Schema.String,
   baseRefName: Schema.String,
   headRefName: Schema.String,
-  additions: Schema.Int,
-  deletions: Schema.Int,
-  changedFiles: Schema.Int,
-  repository: Schema.Struct({ nameWithOwner: Schema.String }),
+  additions: NonNegativeInt,
+  deletions: NonNegativeInt,
+  changedFiles: NonNegativeInt,
+  repository: Schema.Struct({ nameWithOwner: TrimmedNonEmptyString }),
   reviewDecision: Schema.NullOr(Schema.String),
   mergeable: Schema.String,
   commits: Nodes(
@@ -143,7 +147,6 @@ export interface TriageSearch {
   readonly pullRequests: ReadonlyArray<TriagePullRequestNode>;
 }
 
-/** Builds the read of every open PR the viewer authored on github.com, 50 per search page. */
 export const makeOpenPullRequestSearch = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
   const budget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
@@ -163,7 +166,7 @@ export const makeOpenPullRequestSearch = Effect.gen(function* () {
   const readPage = (after: string | null) =>
     budget.query(TRIAGE_HOST, SEARCH_DOCUMENT).pipe(
       Effect.flatMap((query) => retryGatewayErrors(execute(query, after))),
-      Effect.mapError((error) => new TriageReadError({ detail: error.detail })),
+      Effect.mapError((error) => new TriageReadError({ detail: failureDetail(error) })),
       Effect.filterOrFail(
         (output) => !output.stdoutTruncated,
         () => new TriageReadError({ detail: "GitHub's answer was too large to read." }),
@@ -177,15 +180,30 @@ export const makeOpenPullRequestSearch = Effect.gen(function* () {
     Effect.gen(function* () {
       let page = yield* readPage(null);
       const pullRequests = visibleNodes(page);
-      let { hasNextPage, endCursor } = page.data.search.pageInfo;
-      while (hasNextPage && endCursor !== null) {
-        page = yield* readPage(endCursor);
-        ({ hasNextPage, endCursor } = page.data.search.pageInfo);
+      while (page.data.search.pageInfo.hasNextPage) {
+        page = yield* readPage(yield* nextCursor(page));
         pullRequests.push(...visibleNodes(page));
       }
       return { viewer: page.data.viewer.login, pullRequests } satisfies TriageSearch;
     });
 });
+
+function nextCursor(page: SearchPage): Effect.Effect<string, TriageReadError> {
+  const cursor = page.data.search.pageInfo.endCursor;
+  return cursor === null
+    ? Effect.fail(
+        new TriageReadError({ detail: "GitHub's search promised another page without a cursor." }),
+      )
+    : Effect.succeed(cursor);
+}
+
+function failureDetail(
+  error: GitHubCli.GitHubCliError | SourceControlRateLimit.SourceControlRateLimitPausedError,
+): string {
+  return error._tag === "GitHubCliCommandError" && error.httpStatus !== undefined
+    ? `GitHub CLI command failed (HTTP ${error.httpStatus}).`
+    : error.detail;
+}
 
 function visibleNodes(page: SearchPage): Array<TriagePullRequestNode> {
   return page.data.search.nodes.filter((node) => node !== null);

@@ -12,7 +12,13 @@ import type {
   TriageThreadFacts,
   TriageTrunkFacts,
 } from "./facts.types.ts";
-import { TRIAGE_HOST, type TriageActor, type TriagePullRequestNode } from "./TriageGitHub.ts";
+import {
+  CHECKS_PER_PAGE,
+  THREADS_PER_PAGE,
+  TRIAGE_HOST,
+  type TriageActor,
+  type TriagePullRequestNode,
+} from "./TriageGitHub.ts";
 
 const KNOWN_BOTS = new Set([
   "coderabbitai",
@@ -25,9 +31,8 @@ const KNOWN_BOTS = new Set([
   "posthog-bot",
   "codecov",
 ]);
-const LISTED_CHECKS = 50;
-const LISTED_THREADS = 50;
 const HIDDEN_REVIEWER = "a reviewer";
+const BELOW_PENDING: ReadonlySet<TriageCiState> = new Set(["cancelled", "green", "none"]);
 const MERGEABLE_STATES: ReadonlySet<string> = new Set(["MERGEABLE", "CONFLICTING", "UNKNOWN"]);
 
 type Commit = NonNullable<TriagePullRequestNode["commits"]["nodes"][number]>["commit"];
@@ -63,10 +68,10 @@ export function toFacts(node: TriagePullRequestNode, viewer: string): TriageFact
     mergeable: MERGEABLE_STATES.has(node.mergeable)
       ? (node.mergeable as TriageMergeable)
       : "UNKNOWN",
-    ci: withUnlistedFailure(ciFacts(head), head),
+    ci: withUnlistedChecks(ciFacts(head), head),
     trunk: trunkFacts(node),
     threads: node.reviewThreads.nodes.map((thread) => threadFacts(thread, viewer)),
-    threadsTruncated: node.reviewThreads.totalCount > LISTED_THREADS,
+    threadsTruncated: node.reviewThreads.totalCount > THREADS_PER_PAGE,
     humanComments: humanCommentsOf(node, viewer),
   };
 }
@@ -134,19 +139,20 @@ function ciFacts(commit: Commit | undefined): TriageCiFacts {
 }
 
 /**
- * The search lists the first 50 checks only. When the rollup failed, more checks exist than were
- * listed, and none of the listed ones failed, the failing one sits past the list.
+ * The search lists only the first checks. When GitHub has more, the rollup speaks for the ones
+ * past the list: a failure or a pending check there must not read as green.
  */
-function withUnlistedFailure(ci: TriageCiFacts, commit: Commit | undefined): TriageCiFacts {
+function withUnlistedChecks(ci: TriageCiFacts, commit: Commit | undefined): TriageCiFacts {
   const rollup = commit?.statusCheckRollup;
-  const rollupFailed = rollup?.state === "FAILURE" || rollup?.state === "ERROR";
   const listIsPartial = (rollup?.contexts.totalCount ?? 0) > (rollup?.contexts.nodes.length ?? 0);
-  if (!rollupFailed || !listIsPartial || ci.failing.length > 0) return ci;
-  return {
-    ...ci,
-    state: "failing",
-    failing: [`a check past the first ${LISTED_CHECKS}`],
-  };
+  if (!rollup || !listIsPartial || ci.failing.length > 0) return ci;
+  if (rollup.state === "FAILURE" || rollup.state === "ERROR") {
+    return { ...ci, state: "failing", failing: [`a check past the first ${CHECKS_PER_PAGE}`] };
+  }
+  if ((rollup.state === "PENDING" || rollup.state === "EXPECTED") && BELOW_PENDING.has(ci.state)) {
+    return { ...ci, state: "pending" };
+  }
+  return ci;
 }
 
 function trunkFacts(node: TriagePullRequestNode): TriageTrunkFacts {

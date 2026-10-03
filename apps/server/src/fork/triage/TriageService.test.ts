@@ -80,7 +80,7 @@ const pullRequest = (current: TriageReport, number: number): TriagePullRequest =
 
 const [approvedNode, ...otherNodes] = recordedPage.data.search.nodes;
 
-const pageOf = (nodes: ReadonlyArray<unknown>, hasNextPage: boolean, endCursor: string) => ({
+const pageOf = (nodes: ReadonlyArray<unknown>, hasNextPage: boolean, endCursor: string | null) => ({
   data: {
     ...recordedPage.data,
     search: { pageInfo: { hasNextPage, endCursor }, nodes },
@@ -235,6 +235,7 @@ it.effect("gives up after four attempts when GitHub keeps answering 504", () => 
       github.requests.map((request) => request.at),
       [0, 1_000, 3_000, 6_000],
     );
+    assert.strictEqual(current.error, "GitHub read failed: GitHub CLI command failed (HTTP 504).");
     assert.isNotNull(current.error);
     assert.deepStrictEqual(current.pullRequests, []);
     assert.isNull(current.fetchedAt);
@@ -274,34 +275,72 @@ it.effect("reports a search page too large to read instead of a decode error", (
   }).pipe(Effect.provide(github.layer));
 });
 
-it.effect("reads a failed rollup explained by a cancelled run as cancelled CI", () => {
-  const cancelledRun = {
-    __typename: "CheckRun",
-    name: "build",
-    status: "COMPLETED",
-    conclusion: "CANCELLED",
-  };
+const approvedWithRollup = (state: string, totalCount: number, conclusion: string) => {
   const [commitNode] = approvedNode!.commits.nodes;
-  const cancelled = {
+  const check = { __typename: "CheckRun", name: "build", status: "COMPLETED", conclusion };
+  return {
     ...approvedNode,
     commits: {
       nodes: [
         {
           commit: {
             ...commitNode!.commit,
-            statusCheckRollup: {
-              state: "FAILURE",
-              contexts: { totalCount: 1, nodes: [cancelledRun] },
-            },
+            statusCheckRollup: { state, contexts: { totalCount, nodes: [check] } },
           },
         },
       ],
     },
   };
-  const github = fakeGitHub([answerPage(pageOf([cancelled, ...otherNodes], false, "end"))]);
+};
+
+it.effect.each([
+  {
+    reading: "a failed rollup explained by a cancelled run as cancelled CI",
+    rollup: "FAILURE",
+    totalCount: 1,
+    conclusion: "CANCELLED",
+    ci: { state: "cancelled", failing: [] },
+  },
+  {
+    reading: "a pending rollup with only passing checks listed as pending CI",
+    rollup: "PENDING",
+    totalCount: 51,
+    conclusion: "SUCCESS",
+    ci: { state: "pending", failing: [] },
+  },
+] as const)("reads $reading", ({ rollup, totalCount, conclusion, ci }) => {
+  const node = approvedWithRollup(rollup, totalCount, conclusion);
+  const github = fakeGitHub([answerPage(pageOf([node, ...otherNodes], false, "end"))]);
   return Effect.gen(function* () {
     const current = yield* report();
 
-    assert.deepStrictEqual(pullRequest(current, 100).ci, { state: "cancelled", failing: [] });
+    assert.deepStrictEqual(pullRequest(current, 100).ci, ci);
+  }).pipe(Effect.provide(github.layer));
+});
+
+it.effect("fails the read when GitHub promises another page without a cursor", () => {
+  const github = fakeGitHub([answerPage(pageOf(recordedPage.data.search.nodes, true, null))]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+
+    assert.strictEqual(
+      current.error,
+      "GitHub read failed: GitHub's search promised another page without a cursor.",
+    );
+    assert.deepStrictEqual(current.pullRequests, []);
+  }).pipe(Effect.provide(github.layer));
+});
+
+it.effect("fails the read when a PR breaks the report contract", () => {
+  const github = fakeGitHub([
+    answerPage(pageOf([{ ...approvedNode, additions: -1 }], false, "end")),
+  ]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+
+    assert.strictEqual(
+      current.error,
+      "GitHub read failed: GitHub answered with an unexpected search result.",
+    );
   }).pipe(Effect.provide(github.layer));
 });
