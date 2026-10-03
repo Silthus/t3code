@@ -46,7 +46,8 @@ jobs:
         run: |
           built="$(gh run list -R "$GITHUB_REPOSITORY" --workflow fork-desktop-mac.yml \
             --commit "$GITHUB_SHA" --status completed --json conclusion \
-            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length')"
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length' ||
+            echo 0)"
           if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" != "0" ]]; then
             echo "This workflow already built $GITHUB_SHA"
             echo "build=false" >> "$GITHUB_OUTPUT"
@@ -59,7 +60,7 @@ jobs:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       T3CODE_DESKTOP_IDENTITY: fork
     steps:
@@ -95,7 +96,9 @@ jobs:
       # One command builds the bundle and packages it, so both stages bake the
       # same T3CODE_DESKTOP_IDENTITY. The public T3 Connect identifiers come
       # from .env.example.
+      # A step timeout fails the job, so a hung build reports as broken.
       - name: Build unsigned arm64 zip
+        timeout-minutes: 60
         run: |
           cp .env.example .env
           vp run dist:desktop:artifact --platform mac --target zip --arch arm64
