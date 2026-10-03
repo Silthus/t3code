@@ -1,3 +1,4 @@
+import { probeClaudeProxyLimitReset } from "../../provider/Layers/claudeProxyLimitReset.ts";
 import * as NodeCrypto from "node:crypto";
 
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
@@ -2634,6 +2635,8 @@ interface ActiveClaudeTurnContext {
   readonly rejectedRateLimitTypes: Set<string>;
   readonly rateLimitResetTimes: Map<string, string | null>;
   latestAssistantRateLimited: boolean;
+  usageLimitResetProbe?: AbortController;
+  proxyModel?: string;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
   readonly subagentNodesByTaskId: Map<string, OrchestrationV2ExecutionNode["id"]>;
@@ -5480,6 +5483,10 @@ export function makeClaudeAdapterV2(
             return;
           }
 
+          if (message.type === "system" && message.subtype === "init" && message.model) {
+            context.proxyModel = message.model;
+          }
+
           // Subagent narration belongs to its child thread, never the parent log.
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
@@ -6237,7 +6244,7 @@ export function makeClaudeAdapterV2(
 
           if (message.type === "result") {
             const completedAt = yield* DateTime.now;
-            const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+            let interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             const wasSteered = (yield* Ref.get(steeredTurns)).has(context.providerTurnId);
             if (!interrupted && wasSteered && isClaudeActiveSteeringAbortResult(message)) {
               return;
@@ -6262,15 +6269,39 @@ export function makeClaudeAdapterV2(
                 ? "Claude usage limit reached. Send the message again once the limit resets."
                 : undefined);
             const resetTimes = Array.from(context.rateLimitResetTimes.values());
-            const resetAt =
+            let resetAt =
               resetTimes.length > 0 && resetTimes.every((time) => time !== null)
                 ? resetTimes.reduce((latest, time) => (time! > latest ? time! : latest), "")
                 : null;
             const resultFailure = interrupted
               ? null
               : providerFailureFromResult(message, failureHint, usageLimited);
-            const terminalFailure =
-              resultFailure?.class === "usage_limit"
+            if (!interrupted && resultFailure?.class === "usage_limit" && resetAt === null) {
+              context.usageLimitResetProbe = new AbortController();
+              const proxyResetAt = yield* probeClaudeProxyLimitReset({
+                signal: context.usageLimitResetProbe.signal,
+                environment: adapterOptions.environment,
+                settings: adapterOptions.settings,
+                cwd: context.input.runtimePolicy.cwd,
+                model:
+                  context.proxyModel ??
+                  compileClaudeModelSelection(context.input.modelSelection).apiModelId,
+              }).pipe(
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              );
+              delete context.usageLimitResetProbe;
+              if (proxyResetAt !== null) {
+                resetAt = resetTimes.reduce<string>(
+                  (latest, time) => (time !== null && time > latest ? time : latest),
+                  proxyResetAt,
+                );
+              }
+              interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+            }
+            const terminalFailure = interrupted
+              ? null
+              : resultFailure?.class === "usage_limit"
                 ? { ...resultFailure, resetAt }
                 : resultFailure;
             yield* finalizeActiveTurn({
@@ -7224,6 +7255,7 @@ export function makeClaudeAdapterV2(
               next.add(turnInput.providerTurnId);
               return next;
             });
+            currentTurn.usageLimitResetProbe?.abort();
             yield* existing.query.interrupt;
             yield* existing.query.close.pipe(Effect.ignore);
             const closed = yield* Deferred.await(existing.closed).pipe(

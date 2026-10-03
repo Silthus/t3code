@@ -1,4 +1,6 @@
 import * as NodeOS from "node:os";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import type {
   Query as ClaudeQuery,
@@ -73,6 +75,8 @@ const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
 const AUTO_COMPACT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
   autoCompactWindow: "300000",
 });
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 const CLAUDE_TEST_MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
   model: "claude-sonnet-4-6",
@@ -2357,6 +2361,364 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }
         assert.lengthOf(harness.terminalEvents(), 1);
       }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+    ),
+  );
+
+  const proxyResetCases: ReadonlyArray<{
+    readonly name: string;
+    readonly source?: "user settings" | "api key";
+    readonly retryAfter?: string | null;
+    readonly status?: number;
+    readonly native?: "complete" | "partial" | "recovered" | "overage";
+    readonly result?: "success" | "auth failure" | "server error";
+    readonly conflictingSettings?: boolean;
+    readonly globalSettings?: boolean;
+    readonly profile?: boolean;
+    readonly resolvedModel?: string;
+    readonly expectedReset: string | null;
+    readonly expectedProbe: boolean;
+  }> = [
+    {
+      name: "global endpoint override",
+      globalSettings: true,
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    { name: "implicit auth profile", profile: true, expectedReset: null, expectedProbe: false },
+    {
+      name: "resolved model",
+      resolvedModel: "proxy-custom-model",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    { name: "environment", expectedReset: "1970-01-01T00:02:00.000Z", expectedProbe: true },
+    {
+      name: "user settings",
+      source: "user settings",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "API key",
+      source: "api key",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "HTTP date",
+      retryAfter: "Thu, 01 Jan 1970 00:02:00 GMT",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "partial native reset",
+      native: "partial",
+      expectedReset: "1970-01-01T00:05:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "native reset",
+      native: "complete",
+      expectedReset: "1970-01-01T00:05:00.000Z",
+      expectedProbe: false,
+    },
+    ...[
+      null,
+      "garbage",
+      "0",
+      "-1",
+      "1.5",
+      "999999999999999999",
+      "Wed, 31 Dec 1969 23:59:59 GMT",
+    ].map((retryAfter) => ({
+      name: `unknown delay ${retryAfter}`,
+      retryAfter,
+      expectedReset: null,
+      expectedProbe: true,
+    })),
+    { name: "successful probe", status: 200, expectedReset: null, expectedProbe: true },
+    { name: "redirect", status: 302, expectedReset: null, expectedProbe: true },
+    {
+      name: "conflicting user settings",
+      conflictingSettings: true,
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    { name: "successful turn", result: "success", expectedReset: null, expectedProbe: false },
+    {
+      name: "authentication failure",
+      result: "auth failure",
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "server error after limit",
+      result: "server error",
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "recovered bucket",
+      native: "recovered",
+      result: "success",
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "overage",
+      native: "overage",
+      result: "success",
+      expectedReset: null,
+      expectedProbe: false,
+    },
+  ];
+
+  it.effect.each(proxyResetCases)("reports a trustworthy proxy reset for $name", (scenario) =>
+    Effect.gen(function* () {
+      const requests: Array<{
+        url: string | undefined;
+        authorization: string | undefined;
+        key: string | undefined;
+        body: string;
+      }> = [];
+      const server = yield* HttpServer.HttpServer;
+      yield* server.serve(
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          requests.push({
+            url: request.url,
+            authorization: request.headers.authorization,
+            key: request.headers["x-api-key"],
+            body: yield* request.text,
+          });
+          return HttpServerResponse.empty({
+            status: scenario.status ?? 429,
+            headers: {
+              ...(scenario.retryAfter === null
+                ? {}
+                : { "Retry-After": scenario.retryAfter ?? "120" }),
+              ...(scenario.status === 302 ? { Location: "/redirect-target" } : {}),
+            },
+          });
+        }),
+      );
+      const fs = yield* FileSystem.FileSystem;
+      const configDir = yield* fs.makeTempDirectoryScoped();
+      const proxyEnvironment = {
+        ANTHROPIC_BASE_URL: HttpServer.formatAddress(server.address),
+        ...(scenario.source === "api key"
+          ? { ANTHROPIC_API_KEY: "synthetic-key" }
+          : { ANTHROPIC_AUTH_TOKEN: "synthetic-token" }),
+      };
+      if (scenario.source === "user settings" || scenario.conflictingSettings) {
+        yield* fs.writeFileString(
+          `${configDir}/settings.json`,
+          encodeJson({
+            env: {
+              ...proxyEnvironment,
+              ...(scenario.conflictingSettings ? { ANTHROPIC_AUTH_TOKEN: "different-token" } : {}),
+            },
+          }),
+        );
+      }
+      if (scenario.globalSettings)
+        yield* fs.writeFileString(
+          `${configDir}/.claude.json`,
+          encodeJson({ env: { ANTHROPIC_AUTH_TOKEN: "different-token" } }),
+        );
+      const profileDir = `${configDir}/anthropic`;
+      if (scenario.profile) {
+        yield* fs.makeDirectory(`${profileDir}/configs`, { recursive: true });
+        yield* fs.writeFileString(
+          `${profileDir}/configs/default.json`,
+          encodeJson({ authentication: { type: "oidc_federation" } }),
+        );
+      }
+      const harness = yield* makeWakeHarnessWithOptions({
+        environment: {
+          CLAUDE_CONFIG_DIR: configDir,
+          XDG_CONFIG_HOME: configDir,
+          ...(scenario.profile ? { ANTHROPIC_CONFIG_DIR: profileDir } : {}),
+          ...(scenario.source !== "user settings" ? proxyEnvironment : {}),
+        },
+      });
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-proxy-reset"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      if (scenario.resolvedModel)
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "init",
+            model: scenario.resolvedModel,
+            uuid: "00000000-0000-4000-8000-000000000699",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      if (scenario.native !== undefined) {
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              rateLimitType: "five_hour",
+              resetsAt: 300,
+              ...(scenario.native === "overage" ? { isUsingOverage: true } : {}),
+            },
+            uuid: "00000000-0000-4000-8000-000000000692",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        if (scenario.native === "partial" || scenario.native === "recovered") {
+          yield* Queue.offer(
+            harness.sdkMessages,
+            claudeSdkFrame({
+              type: "rate_limit_event",
+              rate_limit_info: {
+                status: scenario.native === "partial" ? "rejected" : "allowed",
+                rateLimitType: scenario.native === "partial" ? "seven_day" : "five_hour",
+              },
+              uuid: "00000000-0000-4000-8000-000000000693",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+        }
+      }
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantErrorFrame({
+          uuid: "00000000-0000-4000-8000-000000000690",
+          error:
+            scenario.result === "success"
+              ? undefined
+              : scenario.result === "auth failure"
+                ? "authentication_failed"
+                : "rate_limit",
+        }),
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000691",
+          result: "Synthetic result",
+          isError: scenario.result !== "success",
+          terminalReason: scenario.result === "success" ? "completed" : "api_error",
+          ...(scenario.result === "success"
+            ? {}
+            : {
+                apiErrorStatus:
+                  scenario.result === "auth failure"
+                    ? 401
+                    : scenario.result === "server error"
+                      ? 500
+                      : 429,
+              }),
+        }),
+      ]);
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, scenario.result === "success" ? "completed" : "failed");
+      if (terminal.status === "failed") {
+        assert.equal(
+          terminal.failure.class,
+          scenario.result === "auth failure" || scenario.result === "server error"
+            ? "provider_error"
+            : "usage_limit",
+        );
+        assert.equal(terminal.failure.resetAt, scenario.expectedReset);
+      }
+      assert.deepEqual(
+        requests,
+        scenario.expectedProbe
+          ? [
+              {
+                url: "/v1/messages/count_tokens",
+                authorization: scenario.source === "api key" ? undefined : "Bearer synthetic-token",
+                key: scenario.source === "api key" ? "synthetic-key" : undefined,
+                body: encodeJson({
+                  model: scenario.resolvedModel ?? "claude-sonnet-4-6",
+                  messages: [{ role: "user", content: "quota" }],
+                }),
+              },
+            ]
+          : [],
+      );
+      assert.lengthOf(harness.terminalEvents(), 1);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, NodeServices.layer, NodeHttpServer.layerTest),
+      ),
+    ),
+  );
+
+  it.effect("cancels a quota probe when the user interrupts the turn", () =>
+    Effect.gen(function* () {
+      const requested = yield* Deferred.make<void>();
+      const requestClosed = yield* Deferred.make<void>();
+      const server = yield* HttpServer.HttpServer;
+      yield* server.serve(
+        Effect.gen(function* () {
+          yield* HttpServerRequest.HttpServerRequest;
+          yield* Deferred.succeed(requested, undefined);
+          return yield* Effect.never;
+        }).pipe(Effect.interruptible, Effect.ensuring(Deferred.succeed(requestClosed, undefined))),
+      );
+      const fs = yield* FileSystem.FileSystem;
+      const configDir = yield* fs.makeTempDirectoryScoped();
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: (messages) => Queue.shutdown(messages),
+        environment: {
+          CLAUDE_CONFIG_DIR: configDir,
+          XDG_CONFIG_HOME: configDir,
+          ANTHROPIC_BASE_URL: HttpServer.formatAddress(server.address),
+          ANTHROPIC_AUTH_TOKEN: "synthetic-token",
+        },
+      });
+      const attemptId = RunAttemptId.make("attempt-proxy-cancel");
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId,
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantErrorFrame({
+          uuid: "00000000-0000-4000-8000-000000000694",
+          error: "rate_limit",
+        }),
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000695",
+          result: "API Error",
+          isError: true,
+          apiErrorStatus: 429,
+          terminalReason: "api_error",
+        }),
+      ]);
+      yield* Deferred.await(requested);
+      yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
+            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+            nativeTurnId: `turn:${attemptId}`,
+          }),
+        })
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(requestClosed);
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "interrupted");
+      assert.lengthOf(harness.terminalEvents(), 1);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, NodeServices.layer, NodeHttpServer.layerTest),
+      ),
     ),
   );
 
