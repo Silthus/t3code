@@ -1,0 +1,120 @@
+name: Fork Desktop Mac
+
+# Builds the unsigned arm64 "T3 Code (Fork)" app from fork main and publishes
+# it to the rolling fork-desktop-latest prerelease, which
+# scripts/fork/install-mac.sh installs. A broken build publishes nothing, so
+# the release keeps the last good app, and scripts/fork/report-build-outcome.sh
+# tracks the breakage in one fork-build-broken issue.
+#
+# Upstream merges reach main through the sync workflow's GITHUB_TOKEN push,
+# which starts no push workflows, so a finished sync triggers this build too.
+# Those runs skip when the release already holds main's head.
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [Fork Sync Upstream]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: fork-desktop-mac
+  cancel-in-progress: true
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  RELEASE_TAG: fork-desktop-latest
+
+jobs:
+  check:
+    name: Check for a new main
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        name: Compare main with the published build
+        run: |
+          built="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" == *"$GITHUB_SHA"* ]]; then
+            echo "fork-desktop-latest already holds $GITHUB_SHA"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and publish T3 Code (Fork)
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      T3CODE_DESKTOP_IDENTITY: fork
+    steps:
+      # Same checkout as release-desktop.yml: the vendored .repos tree has
+      # orphaned gitlinks that actions/checkout's cleanup trips over.
+      - name: Checkout
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install desktop dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      # One command builds the bundle and packages it, so both stages bake the
+      # same T3CODE_DESKTOP_IDENTITY. The public T3 Connect identifiers come
+      # from .env.example.
+      - name: Build unsigned arm64 zip
+        run: |
+          cp .env.example .env
+          vp run dist:desktop:artifact --platform mac --target zip --arch arm64
+
+      - name: Publish to fork-desktop-latest
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          notes="Unsigned Apple Silicon build of fork \`main\` at $GITHUB_SHA (upstream version $version).
+
+          Install or update:
+
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts/fork/install-mac.sh | bash
+          \`\`\`"
+          if ! gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --prerelease \
+              --target "$GITHUB_SHA" --title "T3 Code (Fork) latest" --notes "Publishing the first build."
+          fi
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber release/T3-Code-Fork-arm64.zip
+          gh release edit "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --notes "$notes"
+
+      - name: Report outcome
+        if: success() || failure()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/fork/report-build-outcome.sh ${{ job.status }}
