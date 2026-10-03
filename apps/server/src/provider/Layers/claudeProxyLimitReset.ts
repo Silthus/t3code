@@ -205,11 +205,26 @@ export const probeClaudeProxyLimitReset = Effect.fn("probeClaudeProxyLimitReset"
     const now = DateTime.toEpochMillis(yield* DateTime.now);
     const value = response.retryAfter.trim();
     const delay = /^\d+$/.test(value);
-    const date = delay ? Option.none() : DateTime.make(value);
+    const obsoleteDate =
+      /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (\d{2})-(\w{3})-(\d{2}) (\d{2}:\d{2}:\d{2}) GMT$/i.exec(
+        value,
+      );
+    const currentYear = DateTime.toPartsUtc(DateTime.makeUnsafe(now)).year;
+    const shortYear = obsoleteDate
+      ? Math.floor((currentYear + 50) / 100) * 100 + Number(obsoleteDate[4])
+      : 0;
+    const year = shortYear > currentYear + 50 ? shortYear - 100 : shortYear;
+    const asctimeDate = /^(\w{3}) (\w{3}) ( [1-9]|\d{2}) (\d{2}:\d{2}:\d{2}) (\d{4})$/.exec(value);
+    const normalizedDate = obsoleteDate
+      ? `${obsoleteDate[1]!.slice(0, 3)}, ${obsoleteDate[2]} ${obsoleteDate[3]} ${year} ${obsoleteDate[5]} GMT`
+      : asctimeDate
+        ? `${asctimeDate[1]}, ${asctimeDate[3]!.trim().padStart(2, "0")} ${asctimeDate[2]} ${asctimeDate[5]} ${asctimeDate[4]} GMT`
+        : value;
+    const date = delay ? Option.none() : DateTime.make(normalizedDate);
     if (
       !delay &&
       (Option.isNone(date) ||
-        DateTime.toDateUtc(date.value).toUTCString().toLowerCase() !== value.toLowerCase())
+        DateTime.toDateUtc(date.value).toUTCString().toLowerCase() !== normalizedDate.toLowerCase())
     )
       return null;
     const resetMs = delay

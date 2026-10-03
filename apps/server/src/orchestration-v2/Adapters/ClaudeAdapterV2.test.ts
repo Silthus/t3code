@@ -45,6 +45,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/unstable/ai";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -2390,6 +2391,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
     readonly retryAfter?: string | null;
+    readonly now?: string;
     readonly status?: number;
     readonly native?: "complete" | "partial" | "recovered" | "overage";
     readonly result?: "success" | "auth failure" | "server error";
@@ -2490,6 +2492,32 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       expectedProbe: true,
     },
     {
+      name: "RFC 850 HTTP date",
+      retryAfter: "Thursday, 01-Jan-70 00:02:00 GMT",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "asctime HTTP date",
+      retryAfter: "Thu Jan  1 00:02:00 1970",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "RFC 850 year relative to current century",
+      now: "2070-01-01T00:00:00.000Z",
+      retryAfter: "Wednesday, 01-Jan-70 00:02:00 GMT",
+      expectedReset: "2070-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "RFC 850 century rollover",
+      now: "1999-12-31T23:59:00.000Z",
+      retryAfter: "Saturday, 01-Jan-00 00:02:00 GMT",
+      expectedReset: "2000-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
       name: "partial native reset",
       native: "partial",
       expectedReset: null,
@@ -2509,6 +2537,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       "1.5",
       "999999999999999999",
       "Wed, 31 Dec 1969 23:59:59 GMT",
+      "Wednesday, 01-Jan-70 00:02:00 GMT",
+      "Thursday, 30-Feb-70 00:02:00 GMT",
+      "Wed Jan  1 00:02:00 1970",
+      "Thu Feb 30 00:02:00 1970",
     ].map((retryAfter) => ({
       name: `unknown delay ${retryAfter}`,
       retryAfter,
@@ -2554,6 +2586,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   it.effect.each(proxyResetCases)("reports a trustworthy proxy reset for $name", (scenario) =>
     Effect.gen(function* () {
+      if (scenario.now !== undefined) yield* TestClock.setTime(Date.parse(scenario.now));
       const requests: Array<{
         url: string | undefined;
         authorization: string | undefined;
