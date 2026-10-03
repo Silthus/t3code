@@ -42,6 +42,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { forkTriagePaletteItem } from "../fork/triage/palette";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
@@ -2214,6 +2215,7 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+  actionItems.push(forkTriagePaletteItem(navigate));
 
   actionItems.push({
     kind: "action",
