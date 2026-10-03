@@ -10,6 +10,10 @@ import {
   type ThreadId,
   type ThreadLinkedPullRequest,
 } from "@t3tools/contracts";
+import {
+  legacyThreadPullRequestKey,
+  threadPullRequestKeysEqual,
+} from "@t3tools/shared/threadPullRequests";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -233,6 +237,19 @@ export const make = Effect.gen(function* () {
                   branchPullRequest = thread.branchPullRequest;
                 }
               }
+
+              if (
+                branchPullRequest !== null &&
+                (thread.pullRequests ?? []).some(
+                  (link) =>
+                    link.source === "stack-dismissed" &&
+                    threadPullRequestKeysEqual(
+                      link,
+                      legacyThreadPullRequestKey(branchPullRequest!),
+                    ),
+                )
+              )
+                branchPullRequest = null;
 
               let replacement: ThreadLinkedPullRequest | undefined;
               if (

@@ -1972,6 +1972,99 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect(
+    "unlinks a branch-only pull request through rebuild and rediscovery, then allows relinking",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+        const threadId = ThreadId.make("branch-only-unlink");
+        const projectId = ProjectId.make("branch-only-unlink-project");
+        const workspaceRoot = "/workspace/branch-only-unlink";
+        yield* seedProject({
+          projectId,
+          title: "Branch unlink",
+          workspaceRoot,
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("branch-only-create"),
+          threadId,
+          projectId,
+          title: "Branch unlink",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: "feature/unlink",
+          worktreePath: null,
+        });
+        const branchPullRequest = {
+          projectId,
+          repository: "acme/app",
+          number: 42,
+          url: "https://github.com/acme/app/pull/42",
+        };
+        const discover = Effect.fnUntraced(function* (id: string) {
+          const thread = yield* orchestrator.getThreadShell(threadId);
+          const snapshotSequence = yield* orchestrator.getThreadEventSequence(threadId);
+          yield* orchestrator.dispatch({
+            type: "thread.pull-request.sync",
+            commandId: CommandId.make(id),
+            threadId,
+            projectId,
+            snapshotSequence,
+            expected: {
+              workspaceRoot,
+              branch: "feature/unlink",
+              worktreePath: null,
+              linkedPullRequest: thread?.linkedPullRequest ?? null,
+              branchPullRequest: thread?.branchPullRequest ?? null,
+            },
+            branchPullRequest,
+          });
+        });
+        yield* discover("branch-only-discover");
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.unlink",
+          commandId: CommandId.make("branch-only-unlink"),
+          threadId,
+          host: "GitHub.com",
+          repository: "Acme/App",
+          number: 42,
+        });
+        assert.isNull((yield* orchestrator.getThreadShell(threadId))?.branchPullRequest);
+        yield* discover("branch-only-rediscover");
+        assert.isTrue((yield* maintenance.rebuild).valid);
+        const unlinked = yield* orchestrator.getThreadShell(threadId);
+        assert.isNull(unlinked?.branchPullRequest);
+        assert.deepEqual(
+          unlinked?.pullRequests?.map((link) => [link.number, link.source]),
+          [[42, "stack-dismissed"]],
+        );
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.link",
+          commandId: CommandId.make("branch-only-relink"),
+          threadId,
+          host: "github.com",
+          repository: "acme/app",
+          number: 42,
+          url: branchPullRequest.url,
+          source: "manual",
+        });
+        yield* discover("branch-only-rediscover-linked");
+        const relinked = yield* orchestrator.getThreadShell(threadId);
+        assert.deepEqual(
+          relinked?.pullRequests?.map((link) => [link.number, link.source]),
+          [[42, "manual"]],
+        );
+        assert.deepEqual(relinked?.branchPullRequest, branchPullRequest);
+      }),
+  );
+
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2056,8 +2149,16 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
       });
       assert.isTrue((yield* maintenance.rebuild).valid);
       assert.deepEqual(
-        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.map((link) => link.number),
-        [2, 3, 4],
+        (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.map((link) => [
+          link.number,
+          link.source,
+        ]),
+        [
+          [1, "stack-dismissed"],
+          [2, "manual"],
+          [3, "manual"],
+          [4, "manual"],
+        ],
       );
     }),
   );
