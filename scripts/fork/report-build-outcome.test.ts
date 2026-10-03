@@ -12,7 +12,9 @@ let root: string;
 
 const fakeGh = `#!/usr/bin/env bash
 printf '%s\\0' "$*" >> "$GH_CALLS"
-if [[ "$1 $2" == "issue list" ]]; then printf '%s' "$OPEN_ISSUE"; fi
+if [[ "$*" == "issue list -R Silthus/t3code --label fork-build-broken --state open "* ]]; then
+  printf '%s' "$OPEN_ISSUE"
+fi
 `;
 
 async function report(outcome: "success" | "failure", openIssue: string) {

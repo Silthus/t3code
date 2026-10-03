@@ -8,7 +8,7 @@ name: Fork Desktop Mac
 #
 # Upstream merges reach main through the sync workflow's GITHUB_TOKEN push,
 # which starts no push workflows, so a finished sync triggers this build too.
-# Those runs skip when the release already holds main's head.
+# Those runs skip a main this workflow already built, green or red.
 #
 # A running build is never cancelled, so a publish always finishes; GitHub
 # keeps only the newest waiting run.
@@ -22,6 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   issues: write
 
@@ -31,7 +32,6 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ github.token }}
-  RELEASE_TAG: fork-desktop-latest
 
 jobs:
   check:
@@ -42,11 +42,12 @@ jobs:
       build: ${{ steps.check.outputs.build }}
     steps:
       - id: check
-        name: Compare main with the published build
+        name: Skip a main this workflow already built
         run: |
-          built="$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" == *"$GITHUB_SHA"* ]]; then
-            echo "fork-desktop-latest already holds $GITHUB_SHA"
+          built="$(gh run list -R "$GITHUB_REPOSITORY" --workflow fork-desktop-mac.yml \
+            --commit "$GITHUB_SHA" --status completed --json databaseId --jq length)"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" != "0" ]]; then
+            echo "This workflow already built $GITHUB_SHA"
             echo "build=false" >> "$GITHUB_OUTPUT"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
@@ -98,43 +99,15 @@ jobs:
           cp .env.example .env
           vp run dist:desktop:artifact --platform mac --target zip --arch arm64
 
-      # The new zip uploads under a commit-named asset first. Only then do the
-      # older assets go and the new one takes the stable name, so a failed
-      # upload leaves the last good download in place.
       - name: Publish to fork-desktop-latest
         run: |
-          set -euo pipefail
-          stable="T3-Code-Fork-arm64.zip"
-          staged="T3-Code-Fork-arm64-${GITHUB_SHA:0:7}.zip"
-          version="$(node -p "require('./apps/desktop/package.json').version")"
-          notes="Unsigned Apple Silicon build of fork \`main\` at $GITHUB_SHA (upstream version $version).
-
-          Install or update:
-
-          \`\`\`sh
-          curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts/fork/install-mac.sh | bash
-          \`\`\`"
-          if ! gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --prerelease \
-              --target "$GITHUB_SHA" --title "T3 Code (Fork) latest" --notes "Publishing the first build."
-          fi
-          cp "release/$stable" "release/$staged"
-          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber "release/$staged"
-          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
-            while read -r name; do
-              if [[ "$name" != "$staged" ]]; then
-                gh release delete-asset "$RELEASE_TAG" "$name" -R "$GITHUB_REPOSITORY" --yes
-              fi
-            done
-          asset_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
-            --jq ".assets[] | select(.name == \"$staged\") | .id")"
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" -f name="$stable" >/dev/null
-          gh release edit "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --notes "$notes"
+          scripts/fork/publish-build.sh release/T3-Code-Fork-arm64.zip \
+            "$(node -p "require('./apps/desktop/package.json').version")"
 
   report:
     name: Report build outcome
-    needs: [check, build]
-    if: always() && needs.check.outputs.build == 'true'
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure')
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout the reporter
@@ -149,4 +122,4 @@ jobs:
       - name: Report outcome
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: scripts/fork/report-build-outcome.sh ${{ needs.build.result == 'success' && 'success' || 'failure' }}
+        run: scripts/fork/report-build-outcome.sh ${{ needs.build.result }}

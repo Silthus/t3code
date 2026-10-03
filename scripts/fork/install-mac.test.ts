@@ -60,7 +60,8 @@ const isAppleSilicon =
   HostProcessArchitecture.defaultValue() === "arm64";
 
 async function installOld() {
-  expect(runInstaller(`file://${await zipWithApp("old-build")}`).status).toBe(0);
+  const result = runInstaller(`file://${await zipWithApp("old-build")}`);
+  expect(result.status, result.stderr).toBe(0);
 }
 
 function stillHasOldBuild() {
