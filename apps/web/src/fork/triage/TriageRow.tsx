@@ -67,7 +67,7 @@ const CI_PRESENTATION: Record<
   },
 };
 
-function plural(count: number, noun: string): string {
+export function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
@@ -88,16 +88,16 @@ function WithTooltip({ tip, children }: { tip: ReactNode; children: ReactNode })
   );
 }
 
-function RefinementLadder({ refinement }: { refinement: TriageRefinement }) {
+export function refinementLabel(refinement: TriageRefinement): string {
+  return REFINEMENT_LADDER.find((step) => step.level === refinement)?.label ?? refinement;
+}
+
+export function RefinementLadder({ refinement }: { refinement: TriageRefinement }) {
   const reached = REFINEMENT_LADDER.findIndex((step) => step.level === refinement);
-  const current = REFINEMENT_LADDER[reached];
+  const label = `Refinement: ${refinementLabel(refinement)}`;
   return (
-    <WithTooltip tip={`Refinement: ${current?.label ?? refinement}`}>
-      <span
-        role="img"
-        aria-label={`Refinement: ${current?.label ?? refinement}`}
-        className="flex gap-0.5"
-      >
+    <WithTooltip tip={label}>
+      <span role="img" aria-label={label} className="flex gap-0.5">
         {REFINEMENT_LADDER.map((step, index) => (
           <span
             key={step.level}
@@ -112,7 +112,7 @@ function RefinementLadder({ refinement }: { refinement: TriageRefinement }) {
   );
 }
 
-function CiSignal({ ci }: { ci: TriagePullRequest["ci"] }) {
+export function CiSignal({ ci }: { ci: TriagePullRequest["ci"] }) {
   if (ci.state === "none") return null;
   const presentation = CI_PRESENTATION[ci.state];
   const tip =
@@ -155,39 +155,65 @@ function Signals({ pullRequest }: { pullRequest: TriagePullRequest }) {
   );
 }
 
-export function TriageRow({ pullRequest }: { pullRequest: TriagePullRequest }) {
-  const status = STATUS_PRESENTATION[pullRequest.status];
+function rowId({ key }: Pick<TriagePullRequest, "key">): string {
+  return `${key.repository}#${key.number}`;
+}
+
+export function focusTriageRowSoon(pullRequest: Pick<TriagePullRequest, "key">) {
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLButtonElement>(`[data-triage-row="${CSS.escape(rowId(pullRequest))}"]`)
+      ?.focus();
+  });
+}
+
+export function StatusBadge({ status }: { status: TriageStatus }) {
+  const presentation = STATUS_PRESENTATION[status];
+  return <Badge variant={presentation.variant}>{presentation.label}</Badge>;
+}
+
+export function TriageRow({
+  pullRequest,
+  selected,
+  onSelect,
+}: {
+  pullRequest: TriagePullRequest;
+  selected: boolean;
+  onSelect: (pullRequest: TriagePullRequest) => void;
+}) {
   const { repository, number } = pullRequest.key;
   return (
-    <li className="flex flex-col gap-1 px-2 py-2">
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <a
-                href={pullRequest.url}
-                rel="noreferrer noopener"
-                target="_blank"
-                className="min-w-0 truncate text-sm hover:underline"
-              />
-            }
-          >
-            {pullRequest.title}
-          </TooltipTrigger>
-          <TooltipPopup side="top">{pullRequest.title}</TooltipPopup>
-        </Tooltip>
-        <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
-          {repository}#{number}
+    <li>
+      <button
+        type="button"
+        data-triage-row={rowId(pullRequest)}
+        aria-current={selected ? "true" : undefined}
+        onClick={() => onSelect(pullRequest)}
+        className={cn(
+          "flex w-full cursor-pointer flex-col gap-1 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          selected ? "bg-accent" : "hover:bg-accent/60",
+        )}
+      >
+        <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <Tooltip>
+            <TooltipTrigger render={<span className="min-w-0 truncate text-sm" />}>
+              {pullRequest.title}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{pullRequest.title}</TooltipPopup>
+          </Tooltip>
+          <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
+            {repository}#{number}
+          </span>
+          <span className="ms-auto flex shrink-0 items-center gap-2">
+            <StatusBadge status={pullRequest.status} />
+            <RefinementLadder refinement={pullRequest.refinement} />
+          </span>
         </span>
-        <span className="ms-auto flex shrink-0 items-center gap-2">
-          <Badge variant={status.variant}>{status.label}</Badge>
-          <RefinementLadder refinement={pullRequest.refinement} />
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+          <span className="text-sm font-semibold">{pullRequest.nextAction}</span>
+          <Signals pullRequest={pullRequest} />
         </span>
-      </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
-        <span className="text-sm font-semibold">{pullRequest.nextAction}</span>
-        <Signals pullRequest={pullRequest} />
-      </span>
+      </button>
     </li>
   );
 }
