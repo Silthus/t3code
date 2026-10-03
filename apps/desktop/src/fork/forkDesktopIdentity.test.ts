@@ -6,9 +6,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
-import * as DesktopAppIdentity from "../app/DesktopAppIdentity.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopUserData from "../app/DesktopUserData.ts";
 import desktopViteConfig from "../../vite.config.ts";
 import { forkDesktopIdentityDefine, resolveDesktopIdentity } from "./forkDesktopIdentity.ts";
 
@@ -72,8 +72,6 @@ describe("fork desktop identity", () => {
 
       assert.equal(environment.displayName, "T3 Code (Alpha)");
       assert.equal(environment.branding.displayName, "T3 Code (Alpha)");
-      assert.equal(environment.userDataDirName, "t3code");
-      assert.equal(environment.legacyUserDataDirName, "T3 Code (Alpha)");
       assert.equal(environment.baseDir, "/Users/alice/.t3");
       assert.equal(environment.stateDir, "/Users/alice/.t3/userdata");
       assert.equal(environment.appUserModelId, "com.t3tools.t3code");
@@ -86,8 +84,6 @@ describe("fork desktop identity", () => {
 
       assert.equal(environment.displayName, "T3 Code (Fork)");
       assert.equal(environment.branding.displayName, "T3 Code (Fork)");
-      assert.equal(environment.userDataDirName, "t3code-fork");
-      assert.equal(environment.legacyUserDataDirName, "t3code-fork");
       assert.equal(environment.baseDir, "/Users/alice/.t3-fork");
       assert.equal(environment.stateDir, "/Users/alice/.t3-fork/userdata");
       assert.equal(
@@ -125,38 +121,31 @@ describe("fork desktop identity", () => {
       );
 
       assert.equal(environment.displayName, "T3 Code (Dev)");
-      assert.equal(environment.userDataDirName, "t3code-dev");
       assert.equal(environment.baseDir, "/Users/alice/.t3");
     }),
   );
 
-  it.effect("scopes the single-instance lock away from an installed official app", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-fork-identity-",
-      });
-      const appSupport = path.join(homeDirectory, "Library", "Application Support");
-      yield* fileSystem.makeDirectory(path.join(appSupport, "T3 Code (Alpha)"), {
-        recursive: true,
-      });
+  it.effect.each(["darwin", "win32"] as const)(
+    "scopes the single-instance lock away from an installed official app on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-fork-identity-",
+        });
+        const environmentFor = (desktopIdentity: "upstream" | "fork") =>
+          makeEnvironment({ homeDirectory, platform, desktopIdentity });
+        const official = yield* environmentFor("upstream");
+        const officialProfile = path.join(official.appDataDirectory, "T3 Code (Alpha)");
+        yield* fileSystem.makeDirectory(officialProfile, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(officialProfile, "Local State"), "{}");
 
-      const resolveUserDataPath = (desktopIdentity: "upstream" | "fork") =>
-        DesktopAppIdentity.resolveUserDataPath.pipe(
-          Effect.provide(
-            Layer.merge(
-              makeEnvironmentLayer({ homeDirectory, desktopIdentity }),
-              NodeServices.layer,
-            ),
-          ),
-        );
+        const forkPath = yield* DesktopUserData.resolveUserDataPath(yield* environmentFor("fork"));
+        const officialPath = yield* DesktopUserData.resolveUserDataPath(official);
 
-      assert.equal(
-        yield* resolveUserDataPath("upstream"),
-        path.join(appSupport, "T3 Code (Alpha)"),
-      );
-      assert.equal(yield* resolveUserDataPath("fork"), path.join(appSupport, "t3code-fork"));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        assert.equal(forkPath, path.join(official.appDataDirectory, "t3code-fork"));
+        assert.equal(officialPath, path.join(official.appDataDirectory, "t3code-v2"));
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

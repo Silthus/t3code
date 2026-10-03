@@ -50,7 +50,5 @@ export function forkDesktopEnvironmentOverrides<
   return {
     branding: { ...input.branding, displayName: FORK_DESKTOP_IDENTITY.productName },
     displayName: FORK_DESKTOP_IDENTITY.productName,
-    userDataDirName: FORK_DESKTOP_IDENTITY.userDataDirName,
-    legacyUserDataDirName: FORK_DESKTOP_IDENTITY.userDataDirName,
   };
 }
