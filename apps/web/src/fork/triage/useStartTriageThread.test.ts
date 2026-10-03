@@ -6,6 +6,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { deriveLogicalProjectKey } from "~/logicalProject";
 
 import { useStartTriageThread } from "./useStartTriageThread";
 
@@ -15,6 +16,12 @@ const { openDraft, prepareCheckout, toastUpdate } = vi.hoisted(() => ({
   toastUpdate: vi.fn(),
 }));
 vi.mock("~/hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => openDraft }));
+vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: () => ({
+    sidebarProjectGroupingMode: "repository",
+    sidebarProjectGroupingOverrides: {},
+  }),
+}));
 vi.mock("~/lib/sourceControlActions", () => ({
   usePreparePullRequestThreadAction: () => ({ run: prepareCheckout }),
 }));
@@ -46,8 +53,8 @@ let startedCheckout: Promise<void>;
 let start: ReturnType<typeof useStartTriageThread>["start"];
 let renderer: ReactTestRenderer;
 
-function Harness() {
-  const action = useStartTriageThread(project).start;
+function Harness({ target = project }: { target?: EnvironmentProject }) {
+  const action = useStartTriageThread(target).start;
   useEffect(() => {
     start = action;
   }, [action]);
@@ -88,6 +95,66 @@ afterEach(() => {
 });
 
 describe("starting a triage draft", () => {
+  it("keeps one task when a grouped project on another environment starts during preparation", async () => {
+    const local: EnvironmentProject = {
+      ...project,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/app",
+        provider: "github",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:acme/app.git",
+        },
+      },
+    };
+    const remote: EnvironmentProject = {
+      ...local,
+      environmentId: EnvironmentId.make("devbox"),
+      id: ProjectId.make("remote-app"),
+      workspaceRoot: "/devbox/app",
+    };
+    openDraft.mockImplementation(async (projectRef) => {
+      const target = projectRef.environmentId === local.environmentId ? local : remote;
+      useComposerDraftStore
+        .getState()
+        .setLogicalProjectDraftThreadId(deriveLogicalProjectKey(target), projectRef, draftId, {
+          threadId,
+          branch: null,
+          worktreePath: null,
+          envMode: "local",
+        });
+      return { draftId, threadId };
+    });
+    act(() => renderer.update(createElement(Harness, { target: local })));
+    let pending: Promise<void>;
+    await act(async () => {
+      pending = start("https://github.com/acme/other/pull/42", "Fix CI");
+      await startedCheckout;
+    });
+    const finishFirstCheckout = finishCheckout;
+    act(() => {
+      renderer.unmount();
+      renderer = create(createElement(Harness, { target: remote }));
+    });
+    prepareCheckout.mockImplementationOnce(async () => ({
+      ...checkout,
+      value: { ...checkout.value, branch: "qa", worktreePath: "/devbox/app/qa" },
+    }));
+    await act(async () => {
+      await start("https://github.com/acme/other/pull/43", "QA swarm");
+      finishFirstCheckout(checkout);
+      await pending;
+    });
+    const store = useComposerDraftStore.getState();
+    expect({
+      draft: store.getDraftSession(draftId),
+      prompt: store.getComposerDraft(draftId)?.prompt,
+    }).toMatchObject({
+      draft: { environmentId, projectId, branch: "fix-ci", worktreePath: "/mac/app/pr-42" },
+      prompt: "Fix CI",
+    });
+  });
   it.each(["sent", "discarded"])(
     "reports an interrupted checkout when its draft was %s",
     async (action) => {

@@ -1,4 +1,4 @@
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
@@ -7,12 +7,18 @@ import { handoffPrompt, readableFailure } from "~/components/pullRequest/pullReq
 import { toastManager } from "~/components/ui/toast";
 import { useComposerDraftStore, type DraftId } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { useClientSettings } from "~/hooks/useSettings";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "~/logicalProject";
 
 const preparingProjects = new Set<string>();
 
 export function useStartTriageThread(project: EnvironmentProject | null) {
   const newThread = useNewThreadHandler();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const prepareThread = usePreparePullRequestThreadAction({
     environmentId: project?.environmentId ?? null,
     cwd: project?.workspaceRoot ?? null,
@@ -21,7 +27,7 @@ export function useStartTriageThread(project: EnvironmentProject | null) {
 
   const start = async (url: string, prompt: string) => {
     if (project === null) return;
-    const projectKey = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+    const projectKey = deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
     if (preparingProjects.has(projectKey)) {
       toastManager.add({
         type: "warning",
