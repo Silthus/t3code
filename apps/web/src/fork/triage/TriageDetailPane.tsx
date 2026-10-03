@@ -15,6 +15,7 @@ import { useNowMinute } from "~/hooks/useNowMinute";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import { useProjects, useServerConfigs } from "~/state/entities";
+import { useConnectedEnvironmentIds } from "~/state/environments";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { pickProjectForPullRequest, type PullRequestPanelTarget } from "./projectMatch.logic";
@@ -52,13 +53,16 @@ function usePullRequestPanelTarget(
 ): PullRequestPanelTarget | null {
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   return useMemo(() => {
-    const readableProjects = projects.filter(
-      (project) =>
-        serverConfigs.get(project.environmentId)?.environment.capabilities.pullRequests === true,
+    const canReadPullRequests = (environmentId: EnvironmentId) =>
+      connectedEnvironmentIds.includes(environmentId) &&
+      serverConfigs.get(environmentId)?.environment.capabilities.pullRequests === true;
+    const readableProjects = projects.filter((project) =>
+      canReadPullRequests(project.environmentId),
     );
     return pickProjectForPullRequest(readableProjects, pullRequest, triageEnvironmentId);
-  }, [projects, serverConfigs, pullRequest, triageEnvironmentId]);
+  }, [projects, serverConfigs, connectedEnvironmentIds, pullRequest, triageEnvironmentId]);
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -200,12 +204,14 @@ export function TriageDetailPane({
   pullRequest,
   triageEnvironmentId,
   onClose,
+  onPullRequestChanged,
   headerSlot,
   actionsSlot,
 }: {
   pullRequest: TriagePullRequest;
   triageEnvironmentId: EnvironmentId;
   onClose: () => void;
+  onPullRequestChanged: () => void;
   headerSlot?: ReactNode;
   actionsSlot?: ReactNode;
 }) {
@@ -231,6 +237,9 @@ export function TriageDetailPane({
             reference={panelTarget.reference}
             shortcutsEnabled
             getShortcutContext={getShortcutContext}
+            onActed={(_action, phase = "done") => {
+              if (phase === "done") onPullRequestChanged();
+            }}
           />
         </div>
       )}

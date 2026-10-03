@@ -25,12 +25,8 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
 import { TriageDetailPane } from "./TriageDetailPane";
 import { TriageRow } from "./TriageRow";
+import { isSelectedPullRequest, type TriageSearch } from "./selection.logic";
 import { useTriageEnvironmentId, useTriageReport, type TriageReportView } from "./state";
-
-export interface TriageSearch {
-  readonly repository?: string;
-  readonly number?: number;
-}
 
 interface TriageSelection {
   readonly search: TriageSearch;
@@ -46,18 +42,15 @@ function useTriageSelection(): TriageSelection {
       void navigate({
         to: "/triage",
         search: { repository: key.repository, number: key.number },
+        replace: true,
       }),
     [navigate],
   );
-  const clear = useCallback(() => void navigate({ to: "/triage", search: {} }), [navigate]);
-  return { search, select, clear };
-}
-
-function isSelected(pullRequest: TriagePullRequest, search: TriageSearch): boolean {
-  return (
-    pullRequest.key.number === search.number &&
-    pullRequest.key.repository.toLowerCase() === search.repository?.toLowerCase()
+  const clear = useCallback(
+    () => void navigate({ to: "/triage", search: {}, replace: true }),
+    [navigate],
   );
+  return { search, select, clear };
 }
 
 const GROUP_LABELS: Record<TriageGroup, string> = {
@@ -115,7 +108,7 @@ function TriageGroups({
           <TriageRow
             key={`${pullRequest.key.repository}#${pullRequest.key.number}`}
             pullRequest={pullRequest}
-            selected={isSelected(pullRequest, selection.search)}
+            selected={isSelectedPullRequest(pullRequest, selection.search)}
             onSelect={selection.select}
           />
         ))}
@@ -252,7 +245,7 @@ function TriageEnvironmentPage({
   const view = useTriageReport(environmentId);
   useLiveRefresh(view.reload, { key: `fork-triage:${environmentId}` });
   const selected = view.report?.pullRequests.find((pullRequest) =>
-    isSelected(pullRequest, selection.search),
+    isSelectedPullRequest(pullRequest, selection.search),
   );
   return (
     <TriageLayout
@@ -265,6 +258,7 @@ function TriageEnvironmentPage({
             pullRequest={selected}
             triageEnvironmentId={environmentId}
             onClose={selection.clear}
+            onPullRequestChanged={() => void view.refreshFromGitHub()}
           />
         ) : null
       }
