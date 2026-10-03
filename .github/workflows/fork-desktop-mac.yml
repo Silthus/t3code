@@ -45,7 +45,8 @@ jobs:
         name: Skip a main this workflow already built
         run: |
           built="$(gh run list -R "$GITHUB_REPOSITORY" --workflow fork-desktop-mac.yml \
-            --commit "$GITHUB_SHA" --status completed --json databaseId --jq length)"
+            --commit "$GITHUB_SHA" --status completed --json conclusion \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length')"
           if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" != "0" ]]; then
             echo "This workflow already built $GITHUB_SHA"
             echo "build=false" >> "$GITHUB_OUTPUT"
