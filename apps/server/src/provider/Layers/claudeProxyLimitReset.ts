@@ -132,7 +132,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     Object.entries(environment).some(
       ([key, value]) =>
         value &&
-        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         ),
     )
@@ -156,7 +156,7 @@ export const probeClaudeProxyLimitReset = Effect.fn("probeClaudeProxyLimitReset"
     const baseUrl = environment.ANTHROPIC_BASE_URL;
     const token = environment.ANTHROPIC_AUTH_TOKEN;
     const key = environment.ANTHROPIC_API_KEY;
-    if (!baseUrl || (!token && !key)) return null;
+    if (!baseUrl || (!token && !key) || (token && key)) return null;
     const url = yield* Effect.try(() => new URL(baseUrl)).pipe(Effect.orElseSucceed(() => null));
     if (
       url === null ||

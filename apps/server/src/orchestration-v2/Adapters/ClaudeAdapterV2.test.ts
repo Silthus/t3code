@@ -2371,6 +2371,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const proxyResetCases: ReadonlyArray<{
     readonly name: string;
     readonly launchArgs?: string;
+    readonly environment?: NodeJS.ProcessEnv;
     readonly source?: "user settings" | "api key";
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
@@ -2385,6 +2386,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
   }> = [
+    {
+      name: "Unix socket proxy transport",
+      environment: { ANTHROPIC_UNIX_SOCKET: "/fixture-api.sock" },
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "dual proxy credentials",
+      environment: { ANTHROPIC_API_KEY: "second-fixture-key" },
+      expectedReset: null,
+      expectedProbe: false,
+    },
     {
       name: "settings flag mentioned in quoted prompt",
       launchArgs: '--append-system-prompt "mention --settings here"',
@@ -2581,6 +2594,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           CLAUDE_CONFIG_DIR: configDir,
           XDG_CONFIG_HOME: configDir,
           ...(scenario.source !== "user settings" ? proxyEnvironment : {}),
+          ...scenario.environment,
         },
       });
       yield* harness.runtime.startTurn(
