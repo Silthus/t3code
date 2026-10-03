@@ -32,7 +32,7 @@ const MERGEABLE_STATES: ReadonlySet<string> = new Set(["MERGEABLE", "CONFLICTING
 
 type Commit = NonNullable<TriagePullRequestNode["commits"]["nodes"][number]>["commit"];
 
-export function isBot(actor: TriageActor): boolean {
+function isBot(actor: TriageActor): boolean {
   if (!actor) return true;
   return actor.__typename === "Bot" || actor.login.endsWith("[bot]") || KNOWN_BOTS.has(actor.login);
 }
@@ -88,10 +88,7 @@ function reviewerOf(review: { readonly author: TriageActor }): TriageReviewer {
   return { login: review.author?.login ?? "?", isBot: isBot(review.author) };
 }
 
-/**
- * Users before teams. GitHub hides a team it won't show this login as `null`; it still counts
- * as a reviewer someone waits on.
- */
+/** Users before teams. A team hidden from this login arrives as `null` and still counts. */
 function requestedReviewersOf(node: TriagePullRequestNode): ReadonlyArray<string> {
   const requested = node.reviewRequests.nodes.map((request) => request.requestedReviewer);
   const users = requested.flatMap((reviewer) => (reviewer?.login ? [reviewer.login] : []));
@@ -137,13 +134,14 @@ function ciFacts(commit: Commit | undefined): TriageCiFacts {
 }
 
 /**
- * The search lists the first 50 checks only. When the rollup failed but none of them did, the
- * failing one sits past the list, and the PR must not read as green.
+ * The search lists the first 50 checks only. When the rollup failed, more checks exist than were
+ * listed, and none of the listed ones failed, the failing one sits past the list.
  */
 function withUnlistedFailure(ci: TriageCiFacts, commit: Commit | undefined): TriageCiFacts {
-  const rollup = commit?.statusCheckRollup?.state;
-  const rollupFailed = rollup === "FAILURE" || rollup === "ERROR";
-  if (!rollupFailed || ci.failing.length > 0) return ci;
+  const rollup = commit?.statusCheckRollup;
+  const rollupFailed = rollup?.state === "FAILURE" || rollup?.state === "ERROR";
+  const listIsPartial = (rollup?.contexts.totalCount ?? 0) > (rollup?.contexts.nodes.length ?? 0);
+  if (!rollupFailed || !listIsPartial || ci.failing.length > 0) return ci;
   return {
     ...ci,
     state: "failing",

@@ -12,9 +12,10 @@ import * as GitHubGraphQlBudget from "../../sourceControl/githubGraphQlBudget.ts
 export const TRIAGE_HOST = "github.com";
 const SEARCH_QUERY = "is:pr is:open author:@me archived:false sort:updated-desc";
 const MAX_ATTEMPTS = 4;
+const MAX_PAGE_BYTES = 8 * 1024 * 1024;
 const GATEWAY_STATUSES = new Set([502, 504]);
 
-export const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
+const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
   viewer { login }
   search(query: $q, type: ISSUE, first: 50, after: $after) {
     pageInfo { hasNextPage endCursor }
@@ -24,7 +25,7 @@ export const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
       repository { nameWithOwner }
       reviewDecision mergeable
       commits(last: 1) { nodes { commit { committedDate
-        statusCheckRollup { state contexts(first: 50) { nodes { __typename
+        statusCheckRollup { state contexts(first: 50) { totalCount nodes { __typename
           ... on CheckRun { name status conclusion }
           ... on StatusContext { context state } } } }
         checkSuites(first: 20) { nodes { status conclusion } } } } }
@@ -74,7 +75,10 @@ const PullRequestNode = Schema.Struct({
       commit: Schema.Struct({
         committedDate: Schema.NullOr(Schema.String),
         statusCheckRollup: Schema.NullOr(
-          Schema.Struct({ state: Schema.String, contexts: Nodes(CheckContext) }),
+          Schema.Struct({
+            state: Schema.String,
+            contexts: Schema.Struct({ totalCount: Schema.Int, nodes: Schema.Array(CheckContext) }),
+          }),
         ),
         checkSuites: Nodes(
           Schema.Struct({ status: Schema.String, conclusion: Schema.NullOr(Schema.String) }),
@@ -118,7 +122,7 @@ const SearchPage = Schema.Struct({
         hasNextPage: Schema.Boolean,
         endCursor: Schema.NullOr(Schema.String),
       }),
-      nodes: Schema.Array(PullRequestNode),
+      nodes: Schema.Array(Schema.NullOr(PullRequestNode)),
     }),
   }),
 });
@@ -153,12 +157,17 @@ export const makeOpenPullRequestSearch = Effect.gen(function* () {
         variables: after === null ? { q: SEARCH_QUERY } : { q: SEARCH_QUERY, after },
       }),
       acceptNotModified: true,
+      maxOutputBytes: MAX_PAGE_BYTES,
     });
 
   const readPage = (after: string | null) =>
     budget.query(TRIAGE_HOST, SEARCH_DOCUMENT).pipe(
       Effect.flatMap((query) => retryGatewayErrors(execute(query, after))),
       Effect.mapError((error) => new TriageReadError({ detail: error.detail })),
+      Effect.filterOrFail(
+        (output) => !output.stdoutTruncated,
+        () => new TriageReadError({ detail: "GitHub's answer was too large to read." }),
+      ),
       Effect.map((output) => responseBody(output.stdout)),
       Effect.tap((body) => budget.observe(TRIAGE_HOST, body)),
       Effect.flatMap(decodePage),
@@ -167,16 +176,20 @@ export const makeOpenPullRequestSearch = Effect.gen(function* () {
   return () =>
     Effect.gen(function* () {
       let page = yield* readPage(null);
-      const pullRequests = [...page.data.search.nodes];
+      const pullRequests = visibleNodes(page);
       let { hasNextPage, endCursor } = page.data.search.pageInfo;
       while (hasNextPage && endCursor !== null) {
         page = yield* readPage(endCursor);
         ({ hasNextPage, endCursor } = page.data.search.pageInfo);
-        pullRequests.push(...page.data.search.nodes);
+        pullRequests.push(...visibleNodes(page));
       }
       return { viewer: page.data.viewer.login, pullRequests } satisfies TriageSearch;
     });
 });
+
+function visibleNodes(page: SearchPage): Array<TriagePullRequestNode> {
+  return page.data.search.nodes.filter((node) => node !== null);
+}
 
 function retryGatewayErrors<A>(
   read: Effect.Effect<A, GitHubCli.GitHubCliError>,

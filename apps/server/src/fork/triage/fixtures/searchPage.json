@@ -35,6 +35,7 @@
                   "statusCheckRollup": {
                     "state": "FAILURE",
                     "contexts": {
+                      "totalCount": 215,
                       "nodes": [
                         {
                           "__typename": "CheckRun",
@@ -172,6 +173,7 @@
                   "statusCheckRollup": {
                     "state": "SUCCESS",
                     "contexts": {
+                      "totalCount": 5,
                       "nodes": [
                         {
                           "__typename": "CheckRun",
@@ -342,6 +344,7 @@
                   "statusCheckRollup": {
                     "state": "SUCCESS",
                     "contexts": {
+                      "totalCount": 33,
                       "nodes": [
                         {
                           "__typename": "CheckRun",
@@ -483,6 +486,7 @@
                   "statusCheckRollup": {
                     "state": "SUCCESS",
                     "contexts": {
+                      "totalCount": 31,
                       "nodes": [
                         {
                           "__typename": "CheckRun",

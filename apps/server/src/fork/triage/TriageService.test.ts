@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import type { TriagePullRequest, TriageReport } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -13,7 +14,12 @@ import * as GitHubGraphQlBudget from "../../sourceControl/githubGraphQlBudget.ts
 import recordedPage from "./fixtures/searchPage.json" with { type: "json" };
 import * as TriageService from "./TriageService.ts";
 
-type Answer = Effect.Effect<string, GitHubCli.GitHubCliError>;
+interface FakeOutput {
+  readonly stdout: string;
+  readonly stdoutTruncated?: boolean;
+}
+
+type Answer = Effect.Effect<FakeOutput, GitHubCli.GitHubCliError>;
 
 const GraphQlRequest = Schema.Struct({
   query: Schema.String,
@@ -23,32 +29,37 @@ const decodeGraphQlRequest = Schema.decodeUnknownSync(Schema.fromJsonString(Grap
 
 interface GitHubRequest extends Schema.Schema.Type<typeof GraphQlRequest> {
   readonly args: ReadonlyArray<string>;
+  readonly acceptNotModified: boolean | undefined;
+  readonly at: number;
 }
 
 const httpOk = (page: unknown) =>
   `HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(page)}`;
 
-const httpFailure = (httpStatus: number) =>
+const answerPage = (page: unknown): Answer => Effect.succeed({ stdout: httpOk(page) });
+
+const httpFailure = (httpStatus: number): Answer =>
   Effect.fail(
     new GitHubCli.GitHubCliCommandError({ command: "gh", cwd: "/", cause: undefined, httpStatus }),
   );
 
-const recorded: Answer = Effect.succeed(httpOk(recordedPage));
+const recorded = answerPage(recordedPage);
 
 function fakeGitHub(answers: ReadonlyArray<Answer>) {
   const requests: Array<GitHubRequest> = [];
   const github = Layer.mock(GitHubCli.GitHubCli)({
-    execute: ({ args, stdin }) =>
-      Effect.suspend(() => {
-        requests.push({ args, ...decodeGraphQlRequest(stdin) });
-        return answers[Math.min(requests.length, answers.length) - 1]!;
-      }).pipe(
-        Effect.map((stdout) => ({
+    execute: ({ args, stdin, acceptNotModified }) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((at) => {
+          requests.push({ args, acceptNotModified, at, ...decodeGraphQlRequest(stdin) });
+          return answers[Math.min(requests.length, answers.length) - 1]!;
+        }),
+        Effect.map((output) => ({
           exitCode: ChildProcessSpawner.ExitCode(0),
-          stdout,
           stderr: "",
           stdoutTruncated: false,
           stderrTruncated: false,
+          ...output,
         })),
       ),
   });
@@ -66,6 +77,8 @@ const pullRequest = (current: TriageReport, number: number): TriagePullRequest =
   assert.isDefined(found, `PR #${number} is in the report`);
   return found!;
 };
+
+const [approvedNode, ...otherNodes] = recordedPage.data.search.nodes;
 
 const pageOf = (nodes: ReadonlyArray<unknown>, hasNextPage: boolean, endCursor: string) => ({
   data: {
@@ -134,15 +147,16 @@ it.effect("classifies every PR of the recorded search page into the report", () 
       request!.variables.q,
       "is:pr is:open author:@me archived:false sort:updated-desc",
     );
+    assert.strictEqual(request!.acceptNotModified, true);
     assert.include(request!.query, "rateLimit { cost limit remaining resetAt }");
   }).pipe(Effect.provide(github.layer));
 });
 
-it.effect("follows the search cursor until the last page", () => {
+it.effect("follows the search cursor until the last page, skipping hidden results", () => {
   const [first, second, ...rest] = recordedPage.data.search.nodes;
   const github = fakeGitHub([
-    Effect.succeed(httpOk(pageOf([first, second], true, "cursor-2"))),
-    Effect.succeed(httpOk(pageOf(rest, false, "cursor-3"))),
+    answerPage(pageOf([first, second], true, "cursor-2")),
+    answerPage(pageOf([null, ...rest], false, "cursor-3")),
   ]);
   return Effect.gen(function* () {
     const current = yield* report();
@@ -217,7 +231,10 @@ it.effect("gives up after four attempts when GitHub keeps answering 504", () => 
     yield* TestClock.adjust("6 seconds");
     const current = yield* Fiber.join(read);
 
-    assert.strictEqual(github.requests.length, 4);
+    assert.deepStrictEqual(
+      github.requests.map((request) => request.at),
+      [0, 1_000, 3_000, 6_000],
+    );
     assert.isNotNull(current.error);
     assert.deepStrictEqual(current.pullRequests, []);
     assert.isNull(current.fetchedAt);
@@ -225,15 +242,66 @@ it.effect("gives up after four attempts when GitHub keeps answering 504", () => 
 });
 
 it.effect("keeps the last good PRs and reports the error when a later read fails", () => {
-  const github = fakeGitHub([recorded, httpFailure(401)]);
+  const github = fakeGitHub([
+    recorded,
+    Effect.fail(
+      new GitHubCli.GitHubCliAuthenticationError({ command: "gh", cwd: "/", cause: undefined }),
+    ),
+  ]);
   return Effect.gen(function* () {
     const good = yield* report();
     const failed = yield* report(true);
 
     assert.strictEqual(github.requests.length, 2);
-    assert.strictEqual(failed.error, "GitHub read failed: GitHub CLI command failed.");
+    assert.strictEqual(
+      failed.error,
+      "GitHub read failed: GitHub CLI is not authenticated. Run `gh auth login` and retry.",
+    );
     assert.strictEqual(failed.viewer, good.viewer);
     assert.strictEqual(failed.fetchedAt, good.fetchedAt);
     assert.deepStrictEqual(failed.pullRequests, good.pullRequests);
+  }).pipe(Effect.provide(github.layer));
+});
+
+it.effect("reports a search page too large to read instead of a decode error", () => {
+  const github = fakeGitHub([
+    Effect.succeed({ stdout: httpOk(recordedPage).slice(0, 2_000), stdoutTruncated: true }),
+  ]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+
+    assert.strictEqual(current.error, "GitHub read failed: GitHub's answer was too large to read.");
+  }).pipe(Effect.provide(github.layer));
+});
+
+it.effect("reads a failed rollup explained by a cancelled run as cancelled CI", () => {
+  const cancelledRun = {
+    __typename: "CheckRun",
+    name: "build",
+    status: "COMPLETED",
+    conclusion: "CANCELLED",
+  };
+  const [commitNode] = approvedNode!.commits.nodes;
+  const cancelled = {
+    ...approvedNode,
+    commits: {
+      nodes: [
+        {
+          commit: {
+            ...commitNode!.commit,
+            statusCheckRollup: {
+              state: "FAILURE",
+              contexts: { totalCount: 1, nodes: [cancelledRun] },
+            },
+          },
+        },
+      ],
+    },
+  };
+  const github = fakeGitHub([answerPage(pageOf([cancelled, ...otherNodes], false, "end"))]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+
+    assert.deepStrictEqual(pullRequest(current, 100).ci, { state: "cancelled", failing: [] });
   }).pipe(Effect.provide(github.layer));
 });

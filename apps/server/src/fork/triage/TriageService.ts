@@ -37,7 +37,7 @@ const EMPTY: Snapshot = {
   readAt: null,
 };
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const search = yield* makeOpenPullRequestSearch;
   const snapshot = yield* Ref.make(EMPTY);
   const inFlight = yield* Ref.make<Deferred.Deferred<TriageReport> | null>(null);
@@ -53,21 +53,22 @@ export const make = Effect.gen(function* () {
     return next.report;
   });
 
-  const sharedRead = Effect.gen(function* () {
-    const created = yield* Deferred.make<TriageReport>();
-    const joined = yield* Ref.modify(inFlight, (current) =>
-      current === null ? [created, created] : [current, current],
-    );
-    if (joined === created) {
-      yield* read.pipe(
-        Effect.exit,
-        Effect.flatMap((exit) => Deferred.done(created, exit)),
-        Effect.ensuring(Ref.set(inFlight, null)),
-        Effect.uninterruptible,
+  const sharedRead = Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const created = yield* Deferred.make<TriageReport>();
+      const joined = yield* Ref.modify(inFlight, (current) =>
+        current === null ? [created, created] : [current, current],
       );
-    }
-    return yield* Deferred.await(joined);
-  });
+      if (joined === created) {
+        yield* read.pipe(
+          Effect.exit,
+          Effect.flatMap((exit) => Deferred.done(created, exit)),
+          Effect.ensuring(Ref.set(inFlight, null)),
+        );
+      }
+      return yield* restore(Deferred.await(joined));
+    }),
+  );
 
   const report = Effect.fn("TriageService.report")(function* (input: TriageReportInput) {
     const { report: cached, readAt } = yield* Ref.get(snapshot);
