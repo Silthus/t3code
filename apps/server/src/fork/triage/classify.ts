@@ -26,6 +26,7 @@
  * SOFTWARE.
  */
 import type {
+  TriageCounts,
   TriageGroup,
   TriagePullRequest,
   TriageRefinement,
@@ -341,7 +342,7 @@ function refinementOf(facts: TriageFacts, viewer: string): TriageRefinement {
   return "raw";
 }
 
-function countsOf(facts: TriageFacts): TriageClassification["counts"] {
+function countsOf(facts: TriageFacts): TriageCounts {
   const botThreads = facts.threads.filter((thread) => thread.authorIsBot);
   return {
     humanThreadsAwaiting: openThreads(facts).filter(

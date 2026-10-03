@@ -100,6 +100,40 @@ describe("status (audit-prs classify without Jev)", () => {
     );
   });
 
+  it("ranks a draft above every other rule", () => {
+    const result = classify({
+      isDraft: true,
+      review: "changes-requested",
+      mergeable: "CONFLICTING",
+      threads: [humanThread],
+    });
+    expect(result).toMatchObject({
+      status: "draft",
+      group: "drafts",
+      nextAction: "Answer 1 thread from alice",
+      blockers: ["Resolve merge conflicts", "Address 1 unresolved reviewer thread"],
+    });
+  });
+
+  it("ranks an unanswered human thread above an approval", () => {
+    expect(classify({ review: "approved", threads: [humanThread] })).toMatchObject({
+      status: "changes-requested",
+      group: "needs-you",
+      nextAction: "Answer 1 thread from alice",
+    });
+  });
+
+  it("blocks an approved PR that Trunk removed from the merge queue", () => {
+    const trunk = { managed: true, failed: true, message: null };
+    expect(classify({ review: "approved", trunk })).toMatchObject({
+      status: "blocked",
+      group: "needs-you",
+      nextAction: "Trunk removed the PR from the merge queue",
+      blockers: ["Trunk removed the PR from the merge queue"],
+      reasons: ["Trunk removed the PR from the merge queue"],
+    });
+  });
+
   it("gives approved PRs whose CI waits for a maintainer their own status", () => {
     const result = classify({
       review: "approved",
@@ -303,20 +337,26 @@ describe("group and next action (Postpile own-PR overlay)", () => {
     });
   });
 
-  it("G4: asks to answer human threads, naming the newest one's author", () => {
-    const fromBob = {
-      ...humanThread,
-      author: "bob",
-      lastAuthor: "bob",
-      lastAt: "2026-09-22T12:00:00Z",
-    };
-    const result = classify({ threads: [humanThread, humanThread, fromBob] });
-    expect(result).toMatchObject({
-      status: "changes-requested",
-      group: "needs-you",
-      nextAction: "Answer 3 threads from bob and 1 more",
-    });
-  });
+  const fromBob = {
+    ...humanThread,
+    author: "bob",
+    lastAuthor: "bob",
+    lastAt: "2026-09-22T12:00:00Z",
+  };
+
+  it.each([
+    ["last", [humanThread, humanThread, fromBob]],
+    ["first", [fromBob, humanThread, humanThread]],
+  ])(
+    "G4: asks to answer human threads, naming the newest one's author when it comes %s",
+    (_position, threads) => {
+      expect(classify({ threads })).toMatchObject({
+        status: "changes-requested",
+        group: "needs-you",
+        nextAction: "Answer 3 threads from bob and 1 more",
+      });
+    },
+  );
 
   it("G4: names who the viewer owes an answer, not who opened the thread", () => {
     const viewerOpened = { ...humanThread, author: VIEWER };
