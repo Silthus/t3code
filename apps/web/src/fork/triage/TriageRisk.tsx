@@ -120,7 +120,9 @@ export function TriageRiskDetail({
       ) : (
         <p className="text-muted-foreground">
           {state._tag === "not-requested"
-            ? "Drafts are assessed only when you ask."
+            ? pullRequest.isDraft
+              ? "Drafts are assessed only when you ask."
+              : "This PR has not been assessed."
             : state._tag === "pending"
               ? "Assessment queued or running."
               : state.reason}
