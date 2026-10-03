@@ -9,6 +9,9 @@ name: Fork Desktop Mac
 # Upstream merges reach main through the sync workflow's GITHUB_TOKEN push,
 # which starts no push workflows, so a finished sync triggers this build too.
 # Those runs skip when the release already holds main's head.
+#
+# A running build is never cancelled, so a publish always finishes; GitHub
+# keeps only the newest waiting run.
 
 on:
   push:
@@ -24,7 +27,7 @@ permissions:
 
 concurrency:
   group: fork-desktop-mac
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   GH_TOKEN: ${{ github.token }}
@@ -95,9 +98,14 @@ jobs:
           cp .env.example .env
           vp run dist:desktop:artifact --platform mac --target zip --arch arm64
 
+      # The new zip uploads under a commit-named asset first. Only then do the
+      # older assets go and the new one takes the stable name, so a failed
+      # upload leaves the last good download in place.
       - name: Publish to fork-desktop-latest
         run: |
           set -euo pipefail
+          stable="T3-Code-Fork-arm64.zip"
+          staged="T3-Code-Fork-arm64-${GITHUB_SHA:0:7}.zip"
           version="$(node -p "require('./apps/desktop/package.json').version")"
           notes="Unsigned Apple Silicon build of fork \`main\` at $GITHUB_SHA (upstream version $version).
 
@@ -110,11 +118,35 @@ jobs:
             gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --prerelease \
               --target "$GITHUB_SHA" --title "T3 Code (Fork) latest" --notes "Publishing the first build."
           fi
-          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber release/T3-Code-Fork-arm64.zip
+          cp "release/$stable" "release/$staged"
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber "release/$staged"
+          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+            while read -r name; do
+              if [[ "$name" != "$staged" ]]; then
+                gh release delete-asset "$RELEASE_TAG" "$name" -R "$GITHUB_REPOSITORY" --yes
+              fi
+            done
+          asset_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq ".assets[] | select(.name == \"$staged\") | .id")"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" -f name="$stable" >/dev/null
           gh release edit "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --notes "$notes"
 
+  report:
+    name: Report build outcome
+    needs: [check, build]
+    if: always() && needs.check.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout the reporter
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/scripts/fork/'
+          git checkout --detach FETCH_HEAD
+
       - name: Report outcome
-        if: success() || failure()
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: scripts/fork/report-build-outcome.sh ${{ job.status }}
+        run: scripts/fork/report-build-outcome.sh ${{ needs.build.result == 'success' && 'success' || 'failure' }}

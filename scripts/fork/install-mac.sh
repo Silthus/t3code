@@ -19,6 +19,10 @@ fail() {
   exit 1
 }
 
+bundle_id_of() {
+  plutil -extract CFBundleIdentifier raw -o - "$1/Contents/Info.plist" 2>/dev/null || true
+}
+
 # Asks the fork running from $target to quit, the same way Cmd-Q does, and
 # prints "quit" once it has exited. Prints nothing when it is not running.
 quit_running_fork() {
@@ -43,18 +47,21 @@ JXA
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] ||
   fail "the fork app is built for Apple Silicon Macs only"
 
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+download="$(mktemp -d)"
+staging="$(mktemp -d "$install_dir/.t3code-fork-install.XXXXXX")"
+trap 'rm -rf "$download" "$staging"' EXIT
 
 echo "Downloading $download_url"
-curl -fL --progress-bar -o "$work/fork.zip" "$download_url" || fail "download failed"
-ditto -x -k "$work/fork.zip" "$work/unpacked" || fail "could not unpack the download"
-[[ -d "$work/unpacked/$app_name" ]] || fail "the download does not contain $app_name"
-xattr -dr com.apple.quarantine "$work/unpacked/$app_name"
+curl -fL --progress-bar -o "$download/fork.zip" "$download_url" || fail "download failed"
+ditto -x -k "$download/fork.zip" "$staging" || fail "could not unpack the download"
+[[ -d "$staging/$app_name" ]] || fail "the download does not contain $app_name"
+[[ "$(bundle_id_of "$staging/$app_name")" == "$bundle_id" ]] ||
+  fail "the downloaded app is not $bundle_id"
+xattr -dr com.apple.quarantine "$staging/$app_name"
 
 was_running="$(quit_running_fork)" || fail "close $app_name and run the installer again"
 rm -rf "$target"
-mv "$work/unpacked/$app_name" "$target"
+mv "$staging/$app_name" "$target"
 echo "Installed $target"
 
 if [[ "$was_running" == "quit" ]]; then

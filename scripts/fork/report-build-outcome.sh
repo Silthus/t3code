@@ -18,7 +18,7 @@ broken_body() {
   cat <<EOF
 The fork Mac build of \`main\` at \`$commit\` failed. Run: $RUN_URL
 
-\`fork-desktop-latest\` still serves the last good build, so the installer keeps working. A green build of \`main\` closes this issue.
+Broken builds publish nothing, so the installer keeps serving the last build that \`fork-desktop-latest\` published. A green build of \`main\` closes this issue.
 EOF
 }
 

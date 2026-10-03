@@ -33,7 +33,7 @@ async function report(outcome: "success" | "failure", openIssue: string) {
   return calls
     .split("\0")
     .filter((call) => call !== "")
-    .filter((call) => !call.startsWith("issue list") && !call.startsWith("label create"));
+    .filter((call) => !call.startsWith("issue list"));
 }
 
 describe("fork build outcome report", () => {
@@ -46,10 +46,11 @@ describe("fork build outcome report", () => {
   it("opens a fork-build-broken issue when a build breaks", async () => {
     const writes = await report("failure", "");
 
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toMatch(/^issue create .*--label fork-build-broken/);
-    expect(writes[0]).toContain(RUN_URL);
-    expect(writes[0]).toContain("abc1234");
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toMatch(/^label create fork-build-broken /);
+    expect(writes[1]).toMatch(/^issue create .*--label fork-build-broken/);
+    expect(writes[1]).toContain(RUN_URL);
+    expect(writes[1]).toContain("abc1234");
   });
 
   it("adds the next broken build to the open issue", async () => {

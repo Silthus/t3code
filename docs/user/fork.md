@@ -23,12 +23,6 @@ with `curl`, so macOS opens it without a Gatekeeper prompt. After an update,
 macOS may ask once whether the app can use its "T3 Code (Fork) Safe Storage"
 keychain item. Choose **Always Allow**.
 
-To install a build you made yourself, point the installer at its zip:
-
-```bash
-T3CODE_FORK_DOWNLOAD_URL="file://$PWD/release/T3-Code-Fork-arm64.zip" bash scripts/fork/install-mac.sh
-```
-
 ## Connect your remote machines once
 
 The fork cannot read the official app's saved connections. Add each remote
