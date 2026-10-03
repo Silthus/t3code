@@ -101,7 +101,7 @@ function Facts({ pullRequest }: { pullRequest: TriagePullRequest }) {
       </Fact>
       <Fact label="Bot findings">{botFindingsFact(counts)}</Fact>
       {counts.threadsTruncated ? (
-        <Fact label="Threads">GitHub listed only part of the review threads</Fact>
+        <Fact label="Threads">More threads than GitHub listed</Fact>
       ) : null}
       <Fact label="Size">
         <span className="tabular-nums">
@@ -194,7 +194,10 @@ function TriageHeader({
         badge={<Badge variant="warning">{pullRequest.openQuestions.length}</Badge>}
       />
       <DetailList title="Signals" items={pullRequest.signals} />
-      <DetailList title="Reasons" items={pullRequest.reasons} />
+      <DetailList
+        title="Reasons"
+        items={pullRequest.reasons.filter((reason) => !pullRequest.blockers.includes(reason))}
+      />
       <Facts pullRequest={pullRequest} />
     </section>
   );

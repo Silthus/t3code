@@ -155,6 +155,18 @@ function Signals({ pullRequest }: { pullRequest: TriagePullRequest }) {
   );
 }
 
+function rowId({ key }: Pick<TriagePullRequest, "key">): string {
+  return `${key.repository}#${key.number}`;
+}
+
+export function focusTriageRowSoon(pullRequest: Pick<TriagePullRequest, "key">) {
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLButtonElement>(`[data-triage-row="${CSS.escape(rowId(pullRequest))}"]`)
+      ?.focus();
+  });
+}
+
 export function StatusBadge({ status }: { status: TriageStatus }) {
   const presentation = STATUS_PRESENTATION[status];
   return <Badge variant={presentation.variant}>{presentation.label}</Badge>;
@@ -174,6 +186,7 @@ export function TriageRow({
     <li>
       <button
         type="button"
+        data-triage-row={rowId(pullRequest)}
         aria-current={selected ? "true" : undefined}
         onClick={() => onSelect(pullRequest)}
         className={cn(

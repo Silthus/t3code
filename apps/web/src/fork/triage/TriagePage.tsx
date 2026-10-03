@@ -24,7 +24,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
 import { TriageDetailPane } from "./TriageDetailPane";
-import { TriageRow } from "./TriageRow";
+import { focusTriageRowSoon, TriageRow } from "./TriageRow";
 import { isSelectedPullRequest, type TriageSearch } from "./selection.logic";
 import { useTriageEnvironmentId, useTriageReport, type TriageReportView } from "./state";
 
@@ -212,8 +212,10 @@ function TriageLayout({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <TriageHeader view={view} groups={groups} />
         {view ? <TriageNotices view={view} /> : null}
-        <div className="flex min-h-0 flex-1">
-          <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", detail && "max-lg:hidden")}>
+        <div className="relative flex min-h-0 flex-1">
+          <div
+            className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", detail && "max-lg:invisible")}
+          >
             <WorkspacePageContainer width="wide" className="gap-5">
               {view ? (
                 <TriageBody view={view} groups={groups} selection={selection} />
@@ -225,7 +227,7 @@ function TriageLayout({
             </WorkspacePageContainer>
           </div>
           {detail ? (
-            <div className="min-h-0 w-full min-w-0 border-border lg:w-1/2 lg:shrink-0 lg:border-s">
+            <div className="min-h-0 min-w-0 border-border bg-background max-lg:absolute max-lg:inset-0 lg:w-1/2 lg:shrink-0 lg:border-s">
               {detail}
             </div>
           ) : null}
@@ -247,6 +249,11 @@ function TriageEnvironmentPage({
   const selected = view.report?.pullRequests.find((pullRequest) =>
     isSelectedPullRequest(pullRequest, selection.search),
   );
+  const closeDetail = () => {
+    selection.clear();
+    if (selected) focusTriageRowSoon(selected);
+  };
+  useEscapeToGoBack(selected ? closeDetail : undefined);
   return (
     <TriageLayout
       view={view}
@@ -257,7 +264,7 @@ function TriageEnvironmentPage({
             key={`${selected.key.repository}#${selected.key.number}`}
             pullRequest={selected}
             triageEnvironmentId={environmentId}
-            onClose={selection.clear}
+            onClose={closeDetail}
             onPullRequestChanged={() => void view.refreshFromGitHub()}
           />
         ) : null
@@ -266,13 +273,16 @@ function TriageEnvironmentPage({
   );
 }
 
+function TriageWithoutEnvironment({ selection }: { selection: TriageSelection }) {
+  useEscapeToGoBack();
+  return <TriageLayout view={null} selection={selection} detail={null} />;
+}
+
 export function TriagePage() {
   const selection = useTriageSelection();
-  const hasSelection = selection.search.number !== undefined;
-  useEscapeToGoBack(hasSelection ? selection.clear : undefined);
   const environmentId = useTriageEnvironmentId();
   return environmentId === null ? (
-    <TriageLayout view={null} selection={selection} detail={null} />
+    <TriageWithoutEnvironment selection={selection} />
   ) : (
     <TriageEnvironmentPage
       key={environmentId}

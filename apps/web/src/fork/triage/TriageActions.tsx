@@ -14,7 +14,7 @@ export function TriageActions({
 }) {
   return (
     <div
-      role="toolbar"
+      role="group"
       aria-label="Pull request actions"
       className="flex flex-wrap items-center gap-2"
     >
