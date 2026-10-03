@@ -102,7 +102,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateJudgement",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -132,7 +133,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateJudgement";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -411,10 +413,23 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateJudgement = Effect.fn("ClaudeTextGeneration.generateJudgement")(function* <A>(
+    input: TextGeneration.JudgementGenerationInput<A>,
+  ) {
+    return yield* runClaudeJson({
+      operation: "generateJudgement",
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toCodecJson(input.outputSchema),
+      modelSelection: input.modelSelection,
+    });
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateJudgement,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

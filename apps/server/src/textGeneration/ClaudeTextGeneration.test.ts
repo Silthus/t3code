@@ -577,4 +577,81 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
         }),
     ),
   );
+
+  it.effect("judges with the caller's schema and decodes the structured output", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: { verdict: "risky", reason: "Touches the billing path" },
+        }),
+        argsMustContain: '"verdict":{"type":"string","enum":["safe","risky"]}',
+        stdinMustContain: "Judge this pull request.",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Judge this pull request.",
+            outputSchema: Schema.Struct({
+              verdict: Schema.Literals(["safe", "risky"]),
+              reason: Schema.String,
+            }),
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          });
+
+          expect(judgement).toEqual({ verdict: "risky", reason: "Touches the billing path" });
+        }),
+    ),
+  );
+
+  it.effect("decodes a judgement field that JSON carries as a string", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { linesChanged: "12" } }),
+        argsMustContain: '"linesChanged":{"type":"string"',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Count the changed lines.",
+            outputSchema: Schema.Struct({ linesChanged: Schema.BigInt }),
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          });
+
+          expect(judgement).toEqual({ linesChanged: 12n });
+        }),
+    ),
+  );
+
+  it.effect("rejects a judgement that does not match the caller's schema", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { verdict: "unsure" } }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(
+            textGeneration.generateJudgement!({
+              cwd: process.cwd(),
+              prompt: "Judge this pull request.",
+              outputSchema: Schema.Struct({ verdict: Schema.Literals(["safe", "risky"]) }),
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+              },
+            }),
+          );
+
+          expect(error.operation).toBe("generateJudgement");
+          expect(error.detail).toBe("Claude returned invalid structured output.");
+        }),
+    ),
+  );
 });

@@ -121,7 +121,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateJudgement",
     value: unknown,
   ): Effect.Effect<string, TextGenerationError> =>
     encodeJsonString(value).pipe(
@@ -182,7 +183,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateJudgement";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -453,10 +455,23 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateJudgement = Effect.fn("CodexTextGeneration.generateJudgement")(function* <A>(
+    input: TextGeneration.JudgementGenerationInput<A>,
+  ) {
+    return yield* runCodexJson({
+      operation: "generateJudgement",
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toCodecJson(input.outputSchema),
+      modelSelection: input.modelSelection,
+    });
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateJudgement,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

@@ -2,8 +2,9 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect } from "vite-plus/test";
+import { describe, expect, expectTypeOf } from "vite-plus/test";
 
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -26,6 +27,19 @@ const makeStubTextGeneration = (
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     ...overrides,
   });
+
+const makeWithInstances = (instances: ReadonlyArray<ProviderInstance>) =>
+  TextGeneration.make.pipe(
+    Effect.provideService(
+      ProviderInstanceRegistry.ProviderInstanceRegistry,
+      makeStubRegistry(instances),
+    ),
+    Effect.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => Effect.die("No link lookup expected"),
+      }),
+    ),
+  );
 
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
@@ -120,17 +134,7 @@ describe("TextGeneration.make", () => {
         }),
       );
 
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([personal, work]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
+      const tg = yield* makeWithInstances([personal, work]);
 
       const result = yield* tg.generateBranchName({
         cwd: process.cwd(),
@@ -145,17 +149,7 @@ describe("TextGeneration.make", () => {
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>
     Effect.gen(function* () {
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
+      const tg = yield* makeWithInstances([]);
 
       const result = yield* tg
         .generateBranchName({
@@ -176,4 +170,64 @@ describe("TextGeneration.make", () => {
       }
     }),
   );
+
+  it.effect("forwards a judgement to the selected instance", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("claudeAgent");
+      const received: unknown[] = [];
+      const instance = makeStubInstance(
+        instanceId,
+        makeStubTextGeneration({
+          generateJudgement: (input) => {
+            received.push(input);
+            const decodeJudgement = Schema.decodeUnknownEffect(input.outputSchema);
+            return decodeJudgement({ verdict: "safe" }).pipe(Effect.orDie);
+          },
+        }),
+      );
+      const tg = yield* makeWithInstances([instance]);
+      const input = {
+        cwd: "/tmp/judge",
+        prompt: "Judge this pull request.",
+        outputSchema: Schema.Struct({ verdict: Schema.String }),
+        modelSelection: createModelSelection(instanceId, "claude-sonnet-4-6"),
+      };
+
+      const judgement = yield* tg.generateJudgement!(input);
+
+      expect(judgement).toEqual({ verdict: "safe" });
+      expect(received).toEqual([input]);
+    }),
+  );
+
+  it.effect("fails a judgement when the selected instance cannot judge", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("opencode");
+      const tg = yield* makeWithInstances([
+        makeStubInstance(instanceId, makeStubTextGeneration({})),
+      ]);
+
+      const error = yield* Effect.flip(
+        tg.generateJudgement!({
+          cwd: process.cwd(),
+          prompt: "Judge this pull request.",
+          outputSchema: Schema.Struct({ verdict: Schema.String }),
+          modelSelection: createModelSelection(instanceId, "any-model"),
+        }),
+      );
+
+      expect(error._tag).toBe("TextGenerationError");
+      expect(error.operation).toBe("generateJudgement");
+      expect(error.detail).toContain("opencode");
+    }),
+  );
+
+  it("refuses schemas that transform the model's JSON", () => {
+    type JudgementSchema = TextGeneration.JudgementGenerationInput<{
+      readonly score: number;
+    }>["outputSchema"];
+
+    expectTypeOf(Schema.Struct({ score: Schema.Number })).toExtend<JudgementSchema>();
+    expectTypeOf(Schema.Struct({ score: Schema.NumberFromString })).not.toExtend<JudgementSchema>();
+  });
 });

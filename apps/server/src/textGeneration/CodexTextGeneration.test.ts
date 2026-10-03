@@ -40,6 +40,7 @@ interface FakeCodexInput {
   forbidArg?: string;
   stdinMustContain?: string;
   stdinMustNotContain?: string;
+  schemaMustContain?: string;
 }
 
 // The stub walks argv the way the shell script it replaced did: `--image`,
@@ -56,6 +57,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
     forbidArg: input.forbidArg ?? null,
     stdinMustContain: input.stdinMustContain ?? null,
     stdinMustNotContain: input.stdinMustNotContain ?? null,
+    schemaMustContain: input.schemaMustContain ?? null,
     stderr: input.stderr ?? null,
     output: input.output,
     exitCode: input.exitCode ?? 0,
@@ -71,6 +73,7 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         "const args = process.argv.slice(2);",
         'const originalArgs = ` ${args.join(" ")} `;',
         "let outputPath = null;",
+        "let schemaPath = null;",
         "let seenImage = false;",
         'let seenServiceTier = "";',
         'let seenReasoningEffort = "";',
@@ -83,6 +86,9 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         '    const value = args[index] ?? "";',
         '    if (value.startsWith("service_tier=")) seenServiceTier = value;',
         '    if (value.startsWith("model_reasoning_effort=")) seenReasoningEffort = value;',
+        '  } else if (args[index] === "--output-schema") {',
+        "    index += 1;",
+        "    schemaPath = args[index] ?? null;",
         '  } else if (args[index] === "--output-last-message") {',
         "    index += 1;",
         "    outputPath = args[index] ?? null;",
@@ -122,6 +128,12 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         "}",
         "if (check.stdinMustNotContain !== null && stdinContent.includes(check.stdinMustNotContain)) {",
         '  fail("stdin contained forbidden content", 4);',
+        "}",
+        "if (",
+        "  check.schemaMustContain !== null &&",
+        '  !NodeFS.readFileSync(schemaPath, "utf8").includes(check.schemaMustContain)',
+        ") {",
+        '  fail("output schema missing expected content", 10);',
         "}",
         'if (check.stderr !== null) process.stderr.write(check.stderr + "\\n");',
         'if (outputPath !== null) NodeFS.writeFileSync(outputPath, check.output + "\\n");',
@@ -170,6 +182,69 @@ function withFakeCodexEnv<A, E, R>(
 }
 
 it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
+  it.effect("judges with the caller's schema and decodes the structured output", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ verdict: "risky", reason: "Touches the billing path" }),
+        schemaMustContain: '"verdict":{"type":"string","enum":["safe","risky"]}',
+        stdinMustContain: "Judge this pull request.",
+        requireArg: "--model gpt-5.4-mini",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Judge this pull request.",
+            outputSchema: Schema.Struct({
+              verdict: Schema.Literals(["safe", "risky"]),
+              reason: Schema.String,
+            }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+
+          expect(judgement).toEqual({ verdict: "risky", reason: "Touches the billing path" });
+        }),
+    ),
+  );
+
+  it.effect("decodes a judgement field that JSON carries as a string", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ linesChanged: "12" }),
+        schemaMustContain: '"linesChanged":{"type":"string"',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Count the changed lines.",
+            outputSchema: Schema.Struct({ linesChanged: Schema.BigInt }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+
+          expect(judgement).toEqual({ linesChanged: 12n });
+        }),
+    ),
+  );
+
+  it.effect("rejects a judgement that does not match the caller's schema", () =>
+    withFakeCodexEnv({ output: JSON.stringify({ verdict: "unsure" }) }, (textGeneration) =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Judge this pull request.",
+            outputSchema: Schema.Struct({ verdict: Schema.Literals(["safe", "risky"]) }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          }),
+        );
+
+        expect(error.operation).toBe("generateJudgement");
+        expect(error.detail).toBe("Codex returned invalid structured output.");
+      }),
+    ),
+  );
+
   it.effect.each(["gpt-5.6-luna", "openai.gpt-5.6-luna"])(
     "dispatches the qualified live model for %s",
     (selectedModel) =>
