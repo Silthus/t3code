@@ -100,6 +100,16 @@ describe("status (audit-prs classify without Jev)", () => {
     );
   });
 
+  it("ranks a hard blocker above an unanswered human thread", () => {
+    expect(classify({ mergeable: "CONFLICTING", threads: [humanThread] })).toMatchObject({
+      status: "blocked",
+      group: "needs-you",
+      nextAction: "Resolve merge conflicts",
+      blockers: ["Resolve merge conflicts", "Address 1 unresolved reviewer thread"],
+      reasons: ["Resolve merge conflicts", "Address 1 unresolved reviewer thread"],
+    });
+  });
+
   it("ranks a draft above every other rule", () => {
     const result = classify({
       isDraft: true,
@@ -432,6 +442,16 @@ describe("group and next action (Postpile own-PR overlay)", () => {
         ci: ci({ state: "cancelled", cancelled: ["test"] }),
       }),
     ).toMatchObject({ group: "needs-you", nextAction: "Re-run CI, then ask for review" });
+    expect(
+      classify({
+        requestedReviewers: ["sol"],
+        ci: ci({ state: "awaiting-authorization", awaitingAuthorization: 1 }),
+      }),
+    ).toMatchObject({
+      group: "needs-you",
+      nextAction: "Ask for review and CI authorization",
+      reasons: ["No current approval", "CI also needs authorization"],
+    });
   });
 });
 
@@ -467,6 +487,7 @@ describe("counts", () => {
       threads: [
         humanThread,
         { ...humanThread, isOutdated: true },
+        { ...humanThread, lastAuthor: VIEWER, awaitingAuthor: false },
         resolved(humanThread),
         botThread,
         resolved(botThread),
