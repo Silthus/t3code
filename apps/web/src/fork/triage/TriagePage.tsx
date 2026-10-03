@@ -110,7 +110,7 @@ function TriageBody({
   const { report, loadError } = view;
   if (report === null) {
     return loadError === null ? (
-      <p className="text-sm text-muted-foreground">Reading your pull requests from GitHub…</p>
+      <p className="text-sm text-muted-foreground">Loading pull requests…</p>
     ) : null;
   }
   return report.fetchedAt !== null ? <TriageGroups groups={groups} /> : null;
@@ -126,9 +126,9 @@ function TriageHeader({
   return (
     <WorkspacePageHeader
       electron={isElectron}
-      className="h-auto min-h-(--workspace-topbar-height) py-2"
+      className="h-auto min-h-(--workspace-topbar-height) flex-wrap py-2"
     >
-      <WorkspaceBreadcrumb ariaLabel="Triage breadcrumb">
+      <WorkspaceBreadcrumb ariaLabel="Triage breadcrumb" className="shrink-0">
         <WorkspaceBreadcrumbItem current>
           <h1 className="truncate">Triage</h1>
         </WorkspaceBreadcrumbItem>
