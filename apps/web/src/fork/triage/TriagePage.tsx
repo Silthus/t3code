@@ -4,8 +4,9 @@ import type {
   TriagePullRequest,
   TriageReport,
 } from "@t3tools/contracts";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CircleAlertIcon } from "lucide-react";
-import { useMemo } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -18,11 +19,46 @@ import { isElectron } from "~/env";
 import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { useNowMinute } from "~/hooks/useNowMinute";
+import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
+import { TriageDetailPane } from "./TriageDetailPane";
 import { TriageRow } from "./TriageRow";
 import { useTriageEnvironmentId, useTriageReport, type TriageReportView } from "./state";
+
+export interface TriageSearch {
+  readonly repository?: string;
+  readonly number?: number;
+}
+
+interface TriageSelection {
+  readonly search: TriageSearch;
+  readonly select: (pullRequest: TriagePullRequest) => void;
+  readonly clear: () => void;
+}
+
+function useTriageSelection(): TriageSelection {
+  const search = useSearch({ from: "/_chat/triage" });
+  const navigate = useNavigate();
+  const select = useCallback(
+    ({ key }: TriagePullRequest) =>
+      void navigate({
+        to: "/triage",
+        search: { repository: key.repository, number: key.number },
+      }),
+    [navigate],
+  );
+  const clear = useCallback(() => void navigate({ to: "/triage", search: {} }), [navigate]);
+  return { search, select, clear };
+}
+
+function isSelected(pullRequest: TriagePullRequest, search: TriageSearch): boolean {
+  return (
+    pullRequest.key.number === search.number &&
+    pullRequest.key.repository.toLowerCase() === search.repository?.toLowerCase()
+  );
+}
 
 const GROUP_LABELS: Record<TriageGroup, string> = {
   "needs-you": "Needs you",
@@ -59,7 +95,13 @@ function ErrorLine({ message }: { message: string }) {
   );
 }
 
-function TriageGroups({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup> }) {
+function TriageGroups({
+  groups,
+  selection,
+}: {
+  groups: ReadonlyArray<TriagePullRequestGroup>;
+  selection: TriageSelection;
+}) {
   if (groups.length === 0) {
     return <p className="text-sm text-muted-foreground">No open pull requests of yours.</p>;
   }
@@ -73,6 +115,8 @@ function TriageGroups({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup
           <TriageRow
             key={`${pullRequest.key.repository}#${pullRequest.key.number}`}
             pullRequest={pullRequest}
+            selected={isSelected(pullRequest, selection.search)}
+            onSelect={selection.select}
           />
         ))}
       </ul>
@@ -103,9 +147,11 @@ function TriageNotices({ view }: { view: TriageReportView }) {
 function TriageBody({
   view,
   groups,
+  selection,
 }: {
   view: TriageReportView;
   groups: ReadonlyArray<TriagePullRequestGroup>;
+  selection: TriageSelection;
 }) {
   const { report, loadError } = view;
   if (report === null) {
@@ -113,7 +159,7 @@ function TriageBody({
       <p className="text-sm text-muted-foreground">Loading pull requests…</p>
     ) : null;
   }
-  return report.fetchedAt !== null ? <TriageGroups groups={groups} /> : null;
+  return report.fetchedAt !== null ? <TriageGroups groups={groups} selection={selection} /> : null;
 }
 
 function TriageHeader({
@@ -157,7 +203,15 @@ function TriageHeader({
 
 const NO_PULL_REQUESTS: ReadonlyArray<TriagePullRequest> = [];
 
-function TriageLayout({ view }: { view: TriageReportView | null }) {
+function TriageLayout({
+  view,
+  selection,
+  detail,
+}: {
+  view: TriageReportView | null;
+  selection: TriageSelection;
+  detail: ReactNode;
+}) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
   const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
   return (
@@ -165,32 +219,71 @@ function TriageLayout({ view }: { view: TriageReportView | null }) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <TriageHeader view={view} groups={groups} />
         {view ? <TriageNotices view={view} /> : null}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <WorkspacePageContainer width="wide" className="gap-5">
-            {view ? (
-              <TriageBody view={view} groups={groups} />
-            ) : (
-              <p className="text-sm text-muted-foreground">Connect an environment to see triage.</p>
-            )}
-          </WorkspacePageContainer>
+        <div className="flex min-h-0 flex-1">
+          <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", detail && "max-lg:hidden")}>
+            <WorkspacePageContainer width="wide" className="gap-5">
+              {view ? (
+                <TriageBody view={view} groups={groups} selection={selection} />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Connect an environment to see triage.
+                </p>
+              )}
+            </WorkspacePageContainer>
+          </div>
+          {detail ? (
+            <div className="min-h-0 w-full min-w-0 border-border lg:w-1/2 lg:shrink-0 lg:border-s">
+              {detail}
+            </div>
+          ) : null}
         </div>
       </div>
     </SidebarInset>
   );
 }
 
-function TriageEnvironmentPage({ environmentId }: { environmentId: EnvironmentId }) {
+function TriageEnvironmentPage({
+  environmentId,
+  selection,
+}: {
+  environmentId: EnvironmentId;
+  selection: TriageSelection;
+}) {
   const view = useTriageReport(environmentId);
   useLiveRefresh(view.reload, { key: `fork-triage:${environmentId}` });
-  return <TriageLayout view={view} />;
+  const selected = view.report?.pullRequests.find((pullRequest) =>
+    isSelected(pullRequest, selection.search),
+  );
+  return (
+    <TriageLayout
+      view={view}
+      selection={selection}
+      detail={
+        selected ? (
+          <TriageDetailPane
+            key={`${selected.key.repository}#${selected.key.number}`}
+            pullRequest={selected}
+            triageEnvironmentId={environmentId}
+            onClose={selection.clear}
+          />
+        ) : null
+      }
+    />
+  );
 }
 
 export function TriagePage() {
-  useEscapeToGoBack();
+  const selection = useTriageSelection();
+  const hasSelection = selection.search.number !== undefined;
+  useEscapeToGoBack(hasSelection ? selection.clear : undefined);
   const environmentId = useTriageEnvironmentId();
   return environmentId === null ? (
-    <TriageLayout view={null} />
+    <TriageLayout view={null} selection={selection} detail={null} />
   ) : (
-    <TriageEnvironmentPage key={environmentId} environmentId={environmentId} />
+    <TriageEnvironmentPage
+      key={environmentId}
+      environmentId={environmentId}
+      selection={selection}
+    />
   );
 }
