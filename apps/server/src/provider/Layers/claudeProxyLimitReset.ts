@@ -71,7 +71,11 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     );
     if (
       globalSettings === null ||
-      Object.keys(globalSettings.env ?? {}).some((key) => /^(ANTHROPIC_|CLAUDE_CODE_)/.test(key))
+      Object.keys(globalSettings.env ?? {}).some((key) =>
+        /^(ANTHROPIC_|CLAUDE_CODE_|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS)/.test(
+          key,
+        ),
+      )
     )
       return null;
   }
@@ -119,10 +123,18 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
       settings.policyHelpers !== undefined
     )
       return null;
+    if (
+      environment.ANTHROPIC_BASE_URL === undefined &&
+      settings.env?.ANTHROPIC_BASE_URL !== undefined &&
+      (environment.ANTHROPIC_AUTH_TOKEN ||
+        environment.ANTHROPIC_API_KEY ||
+        (!settings.env.ANTHROPIC_AUTH_TOKEN && !settings.env.ANTHROPIC_API_KEY))
+    )
+      return null;
     for (const [key, value] of Object.entries(settings.env ?? {})) {
       if ((key === "HOME" || key === "XDG_CONFIG_HOME") && environment[key] !== value) return null;
       if (
-        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         )
       )
@@ -135,7 +147,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     Object.entries(environment).some(
       ([key, value]) =>
         value &&
-        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         ),
     )
@@ -188,19 +200,8 @@ export const probeClaudeProxyLimitReset = Effect.fn("probeClaudeProxyLimitReset"
         const response = yield* client.execute(request);
         return { status: response.status, retryAfter: response.headers["retry-after"] };
       }),
-    ).pipe(
-      Effect.timeout("5 seconds"),
-      Effect.orElseSucceed(() => null),
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
-    );
-    const canceled = Effect.callback<null>((resume) => {
-      const abort = () => resume(Effect.succeed(null));
-      input.signal.addEventListener("abort", abort, { once: true });
-      if (input.signal.aborted) abort();
-      return Effect.sync(() => input.signal.removeEventListener("abort", abort));
-    });
-    const response = yield* Effect.raceFirst(probe, canceled);
+    ).pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }));
+    const response = yield* probe;
     if (response?.status !== 429 || !response.retryAfter) return null;
     const now = DateTime.toEpochMillis(yield* DateTime.now);
     const value = response.retryAfter.trim();
@@ -233,5 +234,18 @@ export const probeClaudeProxyLimitReset = Effect.fn("probeClaudeProxyLimitReset"
     if (!Number.isFinite(resetMs) || resetMs <= now || resetMs - now > 30 * 24 * 60 * 60 * 1_000)
       return null;
     return DateTime.formatIso(DateTime.makeUnsafe(resetMs));
+  },
+  (probe, input) => {
+    const canceled = Effect.callback<null>((resume) => {
+      const abort = () => resume(Effect.succeed(null));
+      input.signal.addEventListener("abort", abort, { once: true });
+      if (input.signal.aborted) abort();
+      return Effect.sync(() => input.signal.removeEventListener("abort", abort));
+    });
+    return probe.pipe(
+      Effect.timeout("5 seconds"),
+      Effect.orElseSucceed(() => null),
+      Effect.raceFirst(canceled),
+    );
   },
 );

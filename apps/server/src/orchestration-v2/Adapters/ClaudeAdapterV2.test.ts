@@ -2390,6 +2390,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly source?: "user settings" | "project settings" | "api key";
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
+    readonly settingsEnv?: Readonly<Record<string, string>>;
+    readonly settingsEndpointOnly?: boolean;
     readonly retryAfter?: string | null;
     readonly now?: string;
     readonly status?: number;
@@ -2408,6 +2410,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       expectedReset: "1970-01-01T00:02:00.000Z",
       expectedProbe: true,
     },
+    ...["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"].map((key) => ({
+      name: `project destination with inherited ${key}`,
+      source: "project settings" as const,
+      environment: { [key]: "synthetic-inherited-credential" },
+      settingsEndpointOnly: true,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
     {
       name: "relative Claude config directory",
       source: "user settings",
@@ -2473,6 +2483,26 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       expectedProbe: true,
     },
     { name: "environment", expectedReset: "1970-01-01T00:02:00.000Z", expectedProbe: true },
+    ...["http_proxy", "https_proxy", "all_proxy"].map((key) => ({
+      name: `inherited ${key} transport`,
+      environment: { [key]: "http://127.0.0.1:1" },
+      expectedReset: null,
+      expectedProbe: false,
+    })),
+    {
+      name: "user settings lowercase proxy transport",
+      source: "user settings",
+      settingsEnv: { https_proxy: "http://127.0.0.1:1" },
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    {
+      name: "global settings lowercase proxy transport",
+      globalSettings: true,
+      settingsEnv: { https_proxy: "http://127.0.0.1:1" },
+      expectedReset: null,
+      expectedProbe: false,
+    },
     {
       name: "user settings",
       source: "user settings",
@@ -2637,7 +2667,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           `${settingsDir}/settings.json`,
           encodeJson({
             env: {
-              ...proxyEnvironment,
+              ...(scenario.settingsEndpointOnly
+                ? { ANTHROPIC_BASE_URL: proxyEnvironment.ANTHROPIC_BASE_URL }
+                : proxyEnvironment),
+              ...scenario.settingsEnv,
               ...(scenario.settingsProfile ? { ANTHROPIC_PROFILE: "fixture-profile" } : {}),
               ...(scenario.settingsHome ? { XDG_CONFIG_HOME: "/fixture-other-home" } : {}),
               ...(scenario.conflictingSettings ? { ANTHROPIC_AUTH_TOKEN: "different-token" } : {}),
@@ -2648,7 +2681,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (scenario.globalSettings)
         yield* fs.writeFileString(
           `${configDir}/.claude.json`,
-          encodeJson({ env: { ANTHROPIC_AUTH_TOKEN: "different-token" } }),
+          encodeJson({ env: scenario.settingsEnv ?? { ANTHROPIC_AUTH_TOKEN: "different-token" } }),
         );
       const profileDir = `${configDir}/anthropic`;
       if (scenario.profile) {
@@ -2783,7 +2816,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
-  it.effect("cancels a quota probe when the user interrupts the turn", () =>
+  it.effect.each([
+    { phase: "HTTP request", action: "interruption" },
+    { phase: "configuration", action: "interruption" },
+    { phase: "configuration", action: "timeout" },
+  ])("bounds a quota probe during $phase by $action", ({ phase, action }) =>
     Effect.gen(function* () {
       const requested = yield* Deferred.make<void>();
       const requestClosed = yield* Deferred.make<void>();
@@ -2797,6 +2834,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       const fs = yield* FileSystem.FileSystem;
       const configDir = yield* fs.makeTempDirectoryScoped();
+      const probeFileSystem = {
+        ...fs,
+        exists: (filePath: string) =>
+          phase === "configuration" && filePath === `${configDir}/anthropic/active_config`
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.interruptible,
+                Effect.ensuring(Deferred.succeed(requestClosed, undefined)),
+              )
+            : fs.exists(filePath),
+      };
       const harness = yield* makeWakeHarnessWithOptions({
         close: (messages) => Queue.shutdown(messages),
         environment: {
@@ -2805,7 +2853,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ANTHROPIC_BASE_URL: HttpServer.formatAddress(server.address),
           ANTHROPIC_AUTH_TOKEN: "synthetic-token",
         },
-      });
+      }).pipe(Effect.provideService(FileSystem.FileSystem, probeFileSystem));
       const attemptId = RunAttemptId.make("attempt-proxy-cancel");
       yield* harness.runtime.startTurn(
         makeClaudeTestTurnInput({
@@ -2831,17 +2879,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
       ]);
       yield* Deferred.await(requested);
-      yield* harness.runtime
-        .interruptTurn({
-          providerThread: harness.providerThread,
-          providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
-            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-            nativeTurnId: `turn:${attemptId}`,
-          }),
-        })
-        .pipe(Effect.forkScoped);
+      if (action === "timeout") {
+        yield* TestClock.adjust("5 seconds");
+      } else {
+        yield* harness.runtime
+          .interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
+              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+              nativeTurnId: `turn:${attemptId}`,
+            }),
+          })
+          .pipe(Effect.forkScoped);
+      }
       yield* Deferred.await(requestClosed);
-      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "interrupted");
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, action === "timeout" ? "failed" : "interrupted");
+      if (terminal.status === "failed") assert.equal(terminal.failure.resetAt, null);
       assert.lengthOf(harness.terminalEvents(), 1);
     }).pipe(
       Effect.provide(

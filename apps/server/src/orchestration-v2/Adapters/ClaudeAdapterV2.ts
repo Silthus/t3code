@@ -86,6 +86,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { FetchHttpClient } from "effect/unstable/http";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
@@ -6326,6 +6327,7 @@ export function makeClaudeAdapterV2(
                   context.proxyModel ??
                   compileClaudeModelSelection(context.input.modelSelection).apiModelId,
               }).pipe(
+                Effect.provide(FetchHttpClient.layer),
                 Effect.provideService(FileSystem.FileSystem, fileSystem),
                 Effect.provideService(Path.Path, path),
               );
