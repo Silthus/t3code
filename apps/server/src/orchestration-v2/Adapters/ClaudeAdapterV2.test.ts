@@ -2472,6 +2472,24 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
       ),
     ),
+    ...[
+      { CLAUDE_CODE_REMOTE: "true" },
+      { CLAUDE_CODE_REMOTE: "false" },
+      { CLAUDE_CODE_ENTRYPOINT: "claude-desktop" },
+      { CLAUDE_CODE_ENTRYPOINT: "claude-desktop-3p" },
+      { CLAUDE_CODE_ENTRYPOINT: "local-agent" },
+    ].flatMap((markers) =>
+      ([undefined, "user settings", "project settings", "global settings"] as const).map(
+        (source) => ({
+          name: `${source ?? "inherited"} OAuth-preferred ${encodeJson(markers)}`,
+          ...(source === "user settings" || source === "project settings" ? { source } : {}),
+          ...(source === undefined ? { environment: markers } : { settingsEnv: markers }),
+          ...(source === "global settings" ? { globalSettings: true } : {}),
+          expectedReset: null,
+          expectedProbe: false,
+        }),
+      ),
+    ),
     ...(["model_fallback", "model_refusal_fallback"] as const).map((modelFallback) => ({
       name: `${modelFallback} request model is uncertain`,
       resolvedModel: "proxy-original-model",
