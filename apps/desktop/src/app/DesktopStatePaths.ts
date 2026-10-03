@@ -1,5 +1,7 @@
 import * as Option from "effect/Option";
 
+import { resolveDefaultT3HomeDirName, type DesktopIdentity } from "../fork/forkDesktopIdentity.ts";
+
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
 function normalizeConfiguredBaseDir(t3Home: Option.Option<string>): Option.Option<string> {
@@ -14,9 +16,10 @@ export function resolveDesktopBaseDir(input: {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
+  readonly desktopIdentity: DesktopIdentity;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
-    input.joinPath(input.homeDirectory, ".t3"),
+    input.joinPath(input.homeDirectory, resolveDefaultT3HomeDirName(input.desktopIdentity)),
   );
 }
 

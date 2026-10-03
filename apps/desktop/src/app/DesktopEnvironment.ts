@@ -16,6 +16,11 @@ import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
+import {
+  forkDesktopEnvironmentOverrides,
+  resolveRuntimeDesktopIdentity,
+  type DesktopIdentity,
+} from "../fork/forkDesktopIdentity.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
@@ -28,6 +33,7 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  readonly desktopIdentity?: DesktopIdentity;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -39,6 +45,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly processArch: string;
     readonly isPackaged: boolean;
     readonly isDevelopment: boolean;
+    readonly desktopIdentity: DesktopIdentity;
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
@@ -156,6 +163,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
+  const desktopIdentity = resolveRuntimeDesktopIdentity({
+    isDevelopment,
+    buildIdentity: input.desktopIdentity,
+  });
   const appDataDirectory =
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
@@ -168,6 +179,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     joinPath: path.join,
     t3Home: config.t3Home,
+    desktopIdentity,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -199,6 +211,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
+    desktopIdentity,
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,
@@ -242,6 +255,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
+    ...forkDesktopEnvironmentOverrides({ desktopIdentity, branding }),
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
