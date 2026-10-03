@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Schema from "effect/Schema";
 import type {
   BranchNamingOptions,
   ChatAttachment,
@@ -81,6 +82,14 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
+export interface JudgementGenerationInput<S extends Schema.Top> {
+  cwd: string;
+  prompt: string;
+  outputSchema: S;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
 /**
  * TextGeneration - Service tag for commit and change request text generation.
  */
@@ -112,6 +121,11 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+    /** Answer a prompt with structured output decoded by the caller's schema. */
+    readonly generateJudgement?: <S extends Schema.Top>(
+      input: JudgementGenerationInput<S>,
+    ) => Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -119,7 +133,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generateJudgement";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -170,6 +185,19 @@ export const make = Effect.gen(function* () {
               ));
             return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
           }),
+        ),
+      ),
+    generateJudgement: (input) =>
+      resolveInstance(registry, "generateJudgement", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) =>
+          textGeneration.generateJudgement
+            ? textGeneration.generateJudgement(input)
+            : Effect.fail(
+                new TextGenerationError({
+                  operation: "generateJudgement",
+                  detail: `Provider instance '${input.modelSelection.instanceId}' cannot generate judgements.`,
+                }),
+              ),
         ),
       ),
   });

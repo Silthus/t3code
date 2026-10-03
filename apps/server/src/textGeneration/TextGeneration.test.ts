@@ -2,6 +2,7 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
@@ -26,6 +27,19 @@ const makeStubTextGeneration = (
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
     ...overrides,
   });
+
+const makeWithInstances = (instances: ReadonlyArray<ProviderInstance>) =>
+  TextGeneration.make.pipe(
+    Effect.provideService(
+      ProviderInstanceRegistry.ProviderInstanceRegistry,
+      makeStubRegistry(instances),
+    ),
+    Effect.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => Effect.die("No link lookup expected"),
+      }),
+    ),
+  );
 
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
@@ -174,6 +188,56 @@ describe("TextGeneration.make", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
+    }),
+  );
+
+  it.effect("forwards a judgement to the selected instance", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("claudeAgent");
+      const prompts: string[] = [];
+      const instance = makeStubInstance(
+        instanceId,
+        makeStubTextGeneration({
+          generateJudgement: (input) => {
+            prompts.push(input.prompt);
+            const decodeJudgement = Schema.decodeUnknownEffect(input.outputSchema);
+            return decodeJudgement({ verdict: "safe" }).pipe(Effect.orDie);
+          },
+        }),
+      );
+      const tg = yield* makeWithInstances([instance]);
+
+      const judgement = yield* tg.generateJudgement!({
+        cwd: process.cwd(),
+        prompt: "Judge this pull request.",
+        outputSchema: Schema.Struct({ verdict: Schema.String }),
+        modelSelection: createModelSelection(instanceId, "claude-sonnet-4-6"),
+      });
+
+      expect(judgement).toEqual({ verdict: "safe" });
+      expect(prompts).toEqual(["Judge this pull request."]);
+    }),
+  );
+
+  it.effect("fails a judgement when the selected instance cannot judge", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("opencode");
+      const tg = yield* makeWithInstances([
+        makeStubInstance(instanceId, makeStubTextGeneration({})),
+      ]);
+
+      const error = yield* Effect.flip(
+        tg.generateJudgement!({
+          cwd: process.cwd(),
+          prompt: "Judge this pull request.",
+          outputSchema: Schema.Struct({ verdict: Schema.String }),
+          modelSelection: createModelSelection(instanceId, "any-model"),
+        }),
+      );
+
+      expect(error._tag).toBe("TextGenerationError");
+      expect(error.operation).toBe("generateJudgement");
+      expect(error.detail).toContain("opencode");
     }),
   );
 });
