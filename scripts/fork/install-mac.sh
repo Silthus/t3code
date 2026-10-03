@@ -28,15 +28,18 @@ bundle_id_of() {
 quit_running_fork() {
   osascript -l JavaScript - "$bundle_id" "$target" <<'JXA'
 ObjC.import("AppKit");
-function run([bundleId, target]) {
-  const running = ObjC.unwrap(
+function forkApps(bundleId, target) {
+  return ObjC.unwrap(
     $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleId),
   ).filter((app) => ObjC.unwrap(app.bundleURL.path) === target);
+}
+function run([bundleId, target]) {
+  const running = forkApps(bundleId, target);
   running.forEach((app) => app.terminate);
-  for (let waited = 0; waited < 60 && running.some((app) => !app.terminated); waited++) {
+  for (let waited = 0; waited < 60 && forkApps(bundleId, target).length > 0; waited++) {
     delay(0.5);
   }
-  if (running.some((app) => !app.terminated)) {
+  if (forkApps(bundleId, target).length > 0) {
     throw new Error(`${target} did not quit within 30 seconds`);
   }
   return running.length > 0 ? "quit" : "";
@@ -64,6 +67,8 @@ rm -rf "$target"
 mv "$staging/$app_name" "$target"
 echo "Installed $target"
 
+# A shell inside an Electron app, such as an agent in T3 Code, can carry
+# ELECTRON_RUN_AS_NODE, which open passes on and which starts the fork as Node.
 if [[ "$was_running" == "quit" ]]; then
-  open "$target"
+  env -u ELECTRON_RUN_AS_NODE open "$target"
 fi
