@@ -5,11 +5,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import { afterEach, vi } from "vite-plus/test";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopUserData from "../app/DesktopUserData.ts";
-import desktopViteConfig from "../../vite.config.ts";
 import { forkDesktopIdentityDefine, resolveDesktopIdentity } from "./forkDesktopIdentity.ts";
 
 const packagedMacInput = {
@@ -41,6 +41,11 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("fork desktop identity", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   it("only the exact build value fork selects the fork identity", () => {
     assert.equal(resolveDesktopIdentity("fork"), "fork");
     assert.equal(resolveDesktopIdentity(" fork "), "fork");
@@ -58,13 +63,50 @@ describe("fork desktop identity", () => {
     });
   });
 
-  it("bakes the identity into the main process bundle", () => {
+  it.each([
+    ["fork", '"fork"'],
+    ["", '"upstream"'],
+  ])("bakes T3CODE_DESKTOP_IDENTITY=%j into the main process bundle", async (value, baked) => {
+    vi.stubEnv("T3CODE_DESKTOP_IDENTITY", value);
+    vi.resetModules();
+    const { default: desktopViteConfig } = await import("../../vite.config.ts");
     const mainEntry = [desktopViteConfig.pack ?? []]
       .flat()
       .find((entry) => [entry.entry].flat().includes("src/main.ts"));
 
-    assert.property(mainEntry?.define ?? {}, "__T3CODE_BUILD_DESKTOP_IDENTITY__");
+    assert.equal(mainEntry?.define?.__T3CODE_BUILD_DESKTOP_IDENTITY__, baked);
   });
+
+  it.effect.each([
+    ["fork", "T3 Code (Fork)", "/Users/alice/.t3-fork"],
+    [undefined, "T3 Code (Alpha)", "/Users/alice/.t3"],
+  ] as const)(
+    "resolves a build baked with %j at runtime",
+    ([bakedIdentity, displayName, baseDir]) =>
+      Effect.gen(function* () {
+        vi.stubGlobal("__T3CODE_BUILD_DESKTOP_IDENTITY__", bakedIdentity);
+        vi.resetModules();
+        const baked = yield* Effect.promise(() => import("../app/DesktopEnvironment.ts"));
+        const environment = yield* baked.DesktopEnvironment.pipe(
+          Effect.provide(
+            baked
+              .layer(packagedMacInput)
+              .pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    NodeServices.layer,
+                    NodePathLayer.layerPosix,
+                    DesktopConfig.layerTest({}),
+                  ),
+                ),
+              ),
+          ),
+        );
+
+        assert.equal(environment.displayName, displayName);
+        assert.equal(environment.baseDir, baseDir);
+      }),
+  );
 
   it.effect("keeps the upstream identity when the build has no identity switch", () =>
     Effect.gen(function* () {
