@@ -134,7 +134,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     for (const [key, value] of Object.entries(settings.env ?? {})) {
       if ((key === "HOME" || key === "XDG_CONFIG_HOME") && environment[key] !== value) return null;
       if (
-        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         )
       )
@@ -147,7 +147,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     Object.entries(environment).some(
       ([key, value]) =>
         value &&
-        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         ),
     )

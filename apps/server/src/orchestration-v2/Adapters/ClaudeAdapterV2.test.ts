@@ -2489,6 +2489,32 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       expectedReset: null,
       expectedProbe: false,
     })),
+    ...[
+      "CLAUDE_CODE_CLIENT_CERT",
+      "CLAUDE_CODE_CLIENT_KEY",
+      "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+    ].flatMap((key) => [
+      {
+        name: `inherited ${key} transport`,
+        environment: { [key]: "synthetic-client-certificate-setting" },
+        expectedReset: null,
+        expectedProbe: false,
+      },
+      {
+        name: `user settings ${key} transport`,
+        source: "user settings" as const,
+        settingsEnv: { [key]: "synthetic-client-certificate-setting" },
+        expectedReset: null,
+        expectedProbe: false,
+      },
+      {
+        name: `global settings ${key} transport`,
+        globalSettings: true,
+        settingsEnv: { [key]: "synthetic-client-certificate-setting" },
+        expectedReset: null,
+        expectedProbe: false,
+      },
+    ]),
     {
       name: "user settings lowercase proxy transport",
       source: "user settings",
