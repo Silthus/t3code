@@ -181,6 +181,8 @@ function TriageHeader({
         </Button>
       </div>
       <p className="text-sm font-semibold">{pullRequest.nextAction}</p>
+      <TriageActions pullRequest={pullRequest}>{actionsSlot}</TriageActions>
+      {headerSlot}
       <DetailList title="Blockers" items={pullRequest.blockers} />
       <DetailList
         title="Open questions"
@@ -190,8 +192,6 @@ function TriageHeader({
       <DetailList title="Signals" items={pullRequest.signals} />
       <DetailList title="Reasons" items={pullRequest.reasons} />
       <Facts pullRequest={pullRequest} />
-      {headerSlot}
-      <TriageActions pullRequest={pullRequest}>{actionsSlot}</TriageActions>
     </section>
   );
 }
