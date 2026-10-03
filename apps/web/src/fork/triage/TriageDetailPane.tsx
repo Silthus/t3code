@@ -5,7 +5,7 @@ import type {
   TriageReviewState,
 } from "@t3tools/contracts";
 import { XIcon } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { PullRequestDetailPanel } from "~/components/pullRequest/PullRequestDetailPanel";
 import { Badge } from "~/components/ui/badge";
@@ -159,19 +159,29 @@ function TriageHeader({
   className: string;
 }) {
   const { repository, number } = pullRequest.key;
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    titleRef.current?.focus({ preventScroll: true });
+  }, []);
   return (
     <section aria-label="Triage" className={cn("flex flex-col gap-3 p-4", className)}>
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 className="text-base font-semibold break-words">{pullRequest.title}</h2>
+          <h2
+            ref={titleRef}
+            tabIndex={-1}
+            className="text-base font-semibold break-words focus-visible:outline-none"
+          >
+            {pullRequest.title}
+          </h2>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="font-mono tabular-nums">
+            <span className="font-mono break-all tabular-nums">
               {repository}#{number}
             </span>
             <StatusBadge status={pullRequest.status} />
             <span className="inline-flex items-center gap-1.5">
               <RefinementLadder refinement={pullRequest.refinement} />
-              {refinementLabel(pullRequest.refinement)}
+              <span aria-hidden>{refinementLabel(pullRequest.refinement)}</span>
             </span>
           </span>
         </div>
@@ -206,6 +216,7 @@ function TriageHeader({
 export function TriageDetailPane({
   pullRequest,
   triageEnvironmentId,
+  refreshToken,
   onClose,
   onPullRequestChanged,
   headerSlot,
@@ -213,6 +224,7 @@ export function TriageDetailPane({
 }: {
   pullRequest: TriagePullRequest;
   triageEnvironmentId: EnvironmentId;
+  refreshToken: number;
   onClose: () => void;
   onPullRequestChanged: () => void;
   headerSlot?: ReactNode;
@@ -238,6 +250,7 @@ export function TriageDetailPane({
             key={`${panelTarget.environmentId}:${panelTarget.reference.projectId}:${panelTarget.reference.repository}#${panelTarget.reference.number}`}
             environmentId={panelTarget.environmentId}
             reference={panelTarget.reference}
+            refreshToken={refreshToken}
             shortcutsEnabled
             getShortcutContext={getShortcutContext}
             onActed={(_action, phase = "done") => {

@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CircleAlertIcon } from "lucide-react";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -51,6 +51,27 @@ function useTriageSelection(): TriageSelection {
     [navigate],
   );
   return { search, select, clear };
+}
+
+function isEditableTarget(target: EventTarget | null): target is HTMLElement {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.matches("input, textarea, select"))
+  );
+}
+
+function useEscapeLeavesFieldFirst(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (!isEditableTarget(event.target)) return;
+      event.preventDefault();
+      event.target.blur();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [active]);
 }
 
 const GROUP_LABELS: Record<TriageGroup, string> = {
@@ -200,10 +221,12 @@ function TriageLayout({
   view,
   selection,
   detail,
+  listRef,
 }: {
   view: TriageReportView | null;
   selection: TriageSelection;
   detail: ReactNode;
+  listRef?: Ref<HTMLDivElement>;
 }) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
   const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
@@ -214,6 +237,10 @@ function TriageLayout({
         {view ? <TriageNotices view={view} /> : null}
         <div className="relative flex min-h-0 flex-1">
           <div
+            ref={listRef}
+            tabIndex={-1}
+            role="region"
+            aria-label="Triage pull requests"
             className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", detail && "max-lg:invisible")}
           >
             <WorkspacePageContainer width="wide" className="gap-5">
@@ -246,17 +273,34 @@ function TriageEnvironmentPage({
 }) {
   const view = useTriageReport(environmentId);
   useLiveRefresh(view.reload, { key: `fork-triage:${environmentId}` });
+  const [detailRefreshToken, setDetailRefreshToken] = useState(0);
+  const refreshEverything = () => {
+    setDetailRefreshToken((token) => token + 1);
+    return view.refreshFromGitHub();
+  };
   const selected = view.report?.pullRequests.find((pullRequest) =>
     isSelectedPullRequest(pullRequest, selection.search),
   );
+  const listRef = useRef<HTMLDivElement>(null);
+  const previousSelection = useRef(selected);
+  const { clear: clearSelection, search } = selection;
+  useEffect(() => {
+    if (previousSelection.current && !selected && search.repository) {
+      clearSelection();
+      listRef.current?.focus({ preventScroll: true });
+    }
+    previousSelection.current = selected;
+  }, [selected, clearSelection, search.repository]);
   const closeDetail = () => {
     selection.clear();
     if (selected) focusTriageRowSoon(selected);
   };
+  useEscapeLeavesFieldFirst(selected !== undefined);
   useEscapeToGoBack(selected ? closeDetail : undefined);
   return (
     <TriageLayout
-      view={view}
+      listRef={listRef}
+      view={{ ...view, refreshFromGitHub: refreshEverything }}
       selection={selection}
       detail={
         selected ? (
@@ -264,6 +308,7 @@ function TriageEnvironmentPage({
             key={`${selected.key.repository}#${selected.key.number}`}
             pullRequest={selected}
             triageEnvironmentId={environmentId}
+            refreshToken={detailRefreshToken}
             onClose={closeDetail}
             onPullRequestChanged={() => void view.refreshFromGitHub()}
           />
