@@ -4,6 +4,7 @@ import * as Random from "effect/Random";
 import * as Semaphore from "effect/Semaphore";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
+import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 
@@ -39,6 +40,7 @@ import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
+import { forkTriageHttpApiLayer } from "./fork/triage/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SqlitePersistence from "./persistence/Layers/Sqlite.ts";
@@ -521,6 +523,16 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
     Layer.provide(PullRequestServiceLive),
     Layer.provide(ProjectionStoreV2.layer),
   ),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const service = yield* PullRequestWatchReactor.PullRequestWatchReactor;
+      yield* service.start();
+    }),
+  ).pipe(
+    Layer.provide(PullRequestWatchReactor.layer),
+    Layer.provide(PullRequestServiceLive),
+    Layer.provide(ProjectionStoreV2.layer),
+  ),
   // Subscribes to `account.rate-limits.updated` so usage bars track live
   // telemetry instead of waiting for the next status probe.
   ProviderUsageLimitsIngestionLive,
@@ -628,6 +640,7 @@ const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
+      Layer.provide(forkTriageHttpApiLayer),
       Layer.provide(projectHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
