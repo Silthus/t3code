@@ -2515,6 +2515,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         expectedProbe: false,
       },
     ]),
+    ...([undefined, "user settings", "project settings", "global settings"] as const).map(
+      (source) => ({
+        name: `${source ?? "inherited"} extra request body`,
+        ...(source === "user settings" || source === "project settings" ? { source } : {}),
+        ...(source === undefined
+          ? { environment: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' } }
+          : { settingsEnv: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' } }),
+        ...(source === "global settings" ? { globalSettings: true } : {}),
+        expectedReset: null,
+        expectedProbe: false,
+      }),
+    ),
     {
       name: "user settings lowercase proxy transport",
       source: "user settings",
