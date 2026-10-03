@@ -2413,6 +2413,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly environment?: NodeJS.ProcessEnv;
     readonly relativeConfig?: boolean;
     readonly literalConfig?: boolean;
+    readonly emptyConfig?: boolean;
+    readonly unicodeConfig?: boolean;
     readonly defaultProviderHome?: boolean;
     readonly kernel?: string;
     readonly managedPolicy?: "base" | "drop-in";
@@ -2499,6 +2501,33 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       expectedReset: "1970-01-01T00:02:00.000Z",
       expectedProbe: true,
     },
+    ...(["emptyConfig", "unicodeConfig"] as const).map((kind) => ({
+      name: `${kind} selects native user settings`,
+      [kind]: true,
+      settingsEnv: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' },
+      expectedReset: null,
+      expectedProbe: false,
+    })),
+    {
+      name: "Unicode global config preserves its literal path",
+      unicodeConfig: true,
+      globalSettings: true,
+      settingsEnv: { CLAUDE_CODE_EXTRA_BODY: '{"model":"synthetic-other-model"}' },
+      expectedReset: null,
+      expectedProbe: false,
+    },
+    ...([undefined, "user settings", "project settings", "global settings"] as const).map(
+      (source) => ({
+        name: `${source ?? "inherited"} custom OAuth configuration`,
+        ...(source === "user settings" || source === "project settings" ? { source } : {}),
+        ...(source === undefined
+          ? { environment: { CLAUDE_CODE_CUSTOM_OAUTH_URL: "https://oauth.example.invalid" } }
+          : { settingsEnv: { CLAUDE_CODE_CUSTOM_OAUTH_URL: "https://oauth.example.invalid" } }),
+        ...(source === "global settings" ? { globalSettings: true } : {}),
+        expectedReset: null,
+        expectedProbe: false,
+      }),
+    ),
     {
       name: "literal config directory keeps whitespace",
       literalConfig: true,
@@ -2811,13 +2840,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const fs = yield* FileSystem.FileSystem;
       const root = yield* fs.makeTempDirectoryScoped();
       const cwd = `${root}/workspace`;
-      const configDir = scenario.defaultProviderHome
-        ? `${root}/provider-home/.claude`
-        : scenario.literalConfig
-          ? `${root}/ config `
-          : scenario.relativeConfig
-            ? `${cwd}/.proxy-config`
-            : root;
+      const configDir = scenario.emptyConfig
+        ? cwd
+        : scenario.unicodeConfig
+          ? `${root}/caf\u00e9`
+          : scenario.defaultProviderHome
+            ? `${root}/provider-home/.claude`
+            : scenario.literalConfig
+              ? `${root}/ config `
+              : scenario.relativeConfig
+                ? `${cwd}/.proxy-config`
+                : root;
       yield* fs.makeDirectory(cwd, { recursive: true });
       yield* fs.makeDirectory(configDir, { recursive: true });
       const proxyEnvironment = {
@@ -2830,6 +2863,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         scenario.source === "user settings" ||
         scenario.source === "project settings" ||
         scenario.defaultProviderHome ||
+        scenario.emptyConfig ||
+        scenario.unicodeConfig ||
         scenario.conflictingSettings
       ) {
         const settingsDir = scenario.source === "project settings" ? `${cwd}/.claude` : configDir;
@@ -2849,11 +2884,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }),
         );
       }
-      if (scenario.globalSettings)
+      if (scenario.globalSettings) {
+        const globalConfigDir = scenario.unicodeConfig ? `${root}/cafe\u0301` : configDir;
+        yield* fs.makeDirectory(globalConfigDir, { recursive: true });
         yield* fs.writeFileString(
-          `${configDir}/.claude.json`,
+          `${globalConfigDir}/.claude.json`,
           encodeJson({ env: scenario.settingsEnv ?? { ANTHROPIC_AUTH_TOKEN: "different-token" } }),
         );
+      }
       if (scenario.managedPolicy) {
         const filePath =
           scenario.managedPolicy === "base"
@@ -2879,7 +2917,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         environment: {
           ...(scenario.defaultProviderHome
             ? { HOME: `${root}/provider-home` }
-            : { CLAUDE_CONFIG_DIR: scenario.relativeConfig ? ".proxy-config" : configDir }),
+            : {
+                CLAUDE_CONFIG_DIR: scenario.emptyConfig
+                  ? ""
+                  : scenario.unicodeConfig
+                    ? `${root}/caf\u0065\u0301`
+                    : scenario.relativeConfig
+                      ? ".proxy-config"
+                      : configDir,
+              }),
           XDG_CONFIG_HOME: configDir,
           ...(scenario.source === "user settings" || scenario.source === "project settings"
             ? {}
@@ -3106,6 +3152,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal.status === "failed") assert.equal(terminal.failure.resetAt, null);
       assert.lengthOf(harness.terminalEvents(), 1);
     }).pipe(
+      Effect.provideService(HostProcessPlatform, "linux"),
       Effect.provide(
         Layer.mergeAll(IdAllocator.layer, NodeServices.layer, NodeHttpServer.layerTest),
       ),

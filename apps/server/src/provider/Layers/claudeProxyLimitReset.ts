@@ -49,9 +49,13 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
 
   const providerHome = input.environment.HOME ?? NodeOS.homedir();
   const inheritedConfigDir = input.environment.CLAUDE_CONFIG_DIR;
-  const configDir = input.settings.homePath.trim()
+  const configuredDir = input.settings.homePath.trim()
     ? yield* resolveClaudeHomePath(input.settings, input.environment)
-    : path.resolve(input.cwd, inheritedConfigDir || path.join(providerHome, ".claude"));
+    : inheritedConfigDir;
+  const configDir = path.resolve(
+    input.cwd,
+    (configuredDir ?? path.join(providerHome, ".claude")).normalize("NFC"),
+  );
   const environment = { ...input.environment };
   const profileDir =
     environment.ANTHROPIC_CONFIG_DIR ??
@@ -67,9 +71,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     return null;
   const globalConfigPath = (yield* fileSystem.exists(path.join(configDir, ".config.json")))
     ? path.join(configDir, ".config.json")
-    : input.settings.homePath.trim() || environment.CLAUDE_CONFIG_DIR
-      ? path.join(configDir, ".claude.json")
-      : path.join(providerHome, ".claude.json");
+    : path.resolve(input.cwd, configuredDir || providerHome, ".claude.json");
   if (yield* fileSystem.exists(globalConfigPath)) {
     const globalSettings = yield* fileSystem.readFileString(globalConfigPath).pipe(
       Effect.flatMap(decodeSettings),
@@ -140,7 +142,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     for (const [key, value] of Object.entries(settings.env ?? {})) {
       if ((key === "HOME" || key === "XDG_CONFIG_HOME") && environment[key] !== value) return null;
       if (
-        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        !/^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_CUSTOM_OAUTH_URL|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         )
       )
@@ -153,7 +155,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
     Object.entries(environment).some(
       ([key, value]) =>
         value &&
-        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
+        /^(CLAUDE_CODE_USE_|CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST|CLAUDE_CODE_HOST_CREDS_FILE|CLAUDE_CODE_EXTRA_BODY|CLAUDE_CODE_CLIENT_(CERT|KEY)|CLAUDE_CODE_.*FILE_DESCRIPTOR|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_CUSTOM_OAUTH_URL|ANTHROPIC_PROFILE|ANTHROPIC_CONFIG_DIR|ANTHROPIC_UNIX_SOCKET|ANTHROPIC_FEDERATION_RULE_ID|ANTHROPIC_ORGANIZATION_ID|ANTHROPIC_CUSTOM_HEADERS|WSL_DISTRO_NAME|WSL_INTEROP|HTTPS?_PROXY|https?_proxy|ALL_PROXY|all_proxy|NODE_EXTRA_CA_CERTS|CLAUDE_CODE_CERT_STORE)/.test(
           key,
         ),
     )
