@@ -1,0 +1,129 @@
+name: Fork Desktop Mac
+
+# Builds the unsigned arm64 "T3 Code (Fork)" app from fork main and publishes
+# it to the rolling fork-desktop-latest prerelease, which
+# scripts/fork/install-mac.sh installs. A broken build publishes nothing, so
+# the release keeps the last good app, and scripts/fork/report-build-outcome.sh
+# tracks the breakage in one fork-build-broken issue.
+#
+# Upstream merges reach main through the sync workflow's GITHUB_TOKEN push,
+# which starts no push workflows, so a finished sync triggers this build too.
+# Those runs skip a main this workflow already built, green or red.
+#
+# A running build is never cancelled, so a publish always finishes; GitHub
+# keeps only the newest waiting run.
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [Fork Sync Upstream]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+
+concurrency:
+  group: fork-desktop-mac
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  check:
+    name: Check for a new main
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        name: Skip a main this workflow already built
+        run: |
+          built="$(gh run list -R "$GITHUB_REPOSITORY" --workflow fork-desktop-mac.yml \
+            --commit "$GITHUB_SHA" --status completed --json conclusion \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")] | length' ||
+            echo 0)"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" && "$built" != "0" ]]; then
+            echo "This workflow already built $GITHUB_SHA"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and publish T3 Code (Fork)
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      T3CODE_DESKTOP_IDENTITY: fork
+    steps:
+      # Same checkout as release-desktop.yml: the vendored .repos tree has
+      # orphaned gitlinks that actions/checkout's cleanup trips over.
+      - name: Checkout
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install desktop dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      # One command builds the bundle and packages it, so both stages bake the
+      # same T3CODE_DESKTOP_IDENTITY. The public T3 Connect identifiers come
+      # from .env.example.
+      # A step timeout fails the job, so a hung build reports as broken.
+      - name: Build unsigned arm64 zip
+        timeout-minutes: 60
+        run: |
+          cp .env.example .env
+          vp run dist:desktop:artifact --platform mac --target zip --arch arm64
+
+      - name: Publish to fork-desktop-latest
+        run: |
+          scripts/fork/publish-build.sh release/T3-Code-Fork-arm64.zip \
+            "$(node -p "require('./apps/desktop/package.json').version")"
+
+  report:
+    name: Report build outcome
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout the reporter
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/scripts/fork/'
+          git checkout --detach FETCH_HEAD
+
+      - name: Report outcome
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/fork/report-build-outcome.sh ${{ needs.build.result }}
