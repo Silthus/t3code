@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Stub gh: logs every call, answers the few queries the sync scripts make.
+printf '[gh]' >>"$GH_LOG"
+for a in "$@"; do
+  case "$a" in *$'\n'*) printf ' <multiline:%s>' "$(printf '%s' "$a" | head -1)" >>"$GH_LOG" ;; *) printf ' %s' "$a" >>"$GH_LOG" ;; esac
+done
+echo >>"$GH_LOG"
+prev=""; for a in "$@"; do [[ "$prev" == --body ]] && printf '%s\n' "$a" >"$GH_BODY"; prev="$a"; done
+case "$1 $2" in
+  "issue list") [[ -n "${STUB_OPEN_ISSUE:-}" ]] && echo "$STUB_OPEN_ISSUE"; exit 0 ;;
+  "issue create") echo "https://example.test/issues/99" ;;
+  "issue edit"|"issue close"|"label create") ;;
+  "api --paginate")
+    jqexpr=""; while [[ $# -gt 0 ]]; do [[ "$1" == --jq ]] && jqexpr="$2"; shift; done
+    jq -r "$jqexpr" "$STUB_WORKFLOWS" ;;
+  "api --silent") if [[ -n "${STUB_FAIL_DISABLE:-}" && "$*" == */1/disable ]]; then echo "HTTP 502" >&2; exit 1; fi ;;
+  *) echo "stub gh: unexpected $*" >&2; exit 64 ;;
+esac

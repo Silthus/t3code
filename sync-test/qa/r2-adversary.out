@@ -1,0 +1,5 @@
+FINDINGS:
+
+- scripts/fork/report-sync-outcome.sh:66 | minor | Adversary | A large conflict list makes the issue body exceed GitHub’s body limit or the runner’s argument-size limit -> issue creation/update fails, leaving no current conflict report. The argument-size failure was reproduced read-only. | Split large lists across bounded issue comments and pass bodies through files. | sites: scripts/fork/report-sync-outcome.sh:26, scripts/fork/report-sync-outcome.sh:50, scripts/fork/report-sync-outcome.sh:66, scripts/fork/report-sync-outcome.sh:70
+
+COVERED: .github/workflows/fork-sync-upstream.yml (cleared); scripts/fork/quiet-upstream-workflows.sh (cleared); scripts/fork/report-sync-outcome.sh (flagged); scripts/fork/sync-upstream.sh (cleared).

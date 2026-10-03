@@ -1,0 +1,8 @@
+FINDINGS:
+
+- .github/workflows/fork-sync-upstream.yml:59 | major | Production / rollout | Enabling Actions before the first sync leaves inherited workflows active until the final cleanup step. For example, `release.yml` schedules runs every 30 minutes, while sync runs every six hours. Newly imported workflows also have an execution window after a push; the local fallback never disables them at all. -> Inherited workflows can run on the fork, violating the “never run” requirement. `[skip ci]` does not suppress scheduled, manual, or `pull_request_target` events, and disabling a workflow does not cancel runs already started. | Establish fork-only execution protection before enabling Actions and before publishing newly imported workflows, including through the local fallback. Keep the API sweep as reconciliation, rather than the sole protection. | sites: .github/workflows/fork-sync-upstream.yml:59, scripts/fork/quiet-upstream-workflows.sh:16, scripts/fork/sync-upstream.sh:35, scripts/fork/sync-upstream.sh:43
+
+COVERED: .github/workflows/fork-sync-upstream.yml (flagged); scripts/fork/quiet-upstream-workflows.sh (flagged); scripts/fork/sync-upstream.sh (flagged); scripts/fork/report-sync-outcome.sh (cleared).
+
+Codex session ID: 01a0fe04-3d36-7c30-8eee-2a21ff468ec2
+Resume in Codex: codex resume 01a0fe04-3d36-7c30-8eee-2a21ff468ec2

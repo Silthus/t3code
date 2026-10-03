@@ -1,0 +1,8 @@
+- FIXED in c2261afda: quiet step now runs right after merge+push (if: always()) and before the report step, so issue open/close events cannot fire a workflow imported in the same push; the manual path (conflict issue body, refused-push body, sync-upstream.sh header) ends with `gh workflow run fork-sync-upstream.yml`, which quiets and closes the issue.
+- DECIDED: the inherited 18 workflows are already disabled on the fork (bootstrap done by hand, verified). No GitHub setting allow-lists workflow files, so a seconds-long window for schedule-triggered newly imported workflows in a FORK_SYNC_TOKEN run is accepted. Stripping non-fork workflow files during the merge is rejected (modify/delete conflict on every upstream workflow edit).
+- FIXED: conflict instructions stage with `git add -u` before `git commit --no-edit`.
+- FIXED: refused-push bodies both point to git's reason in the run log.
+- FIXED: quiet sweep tries every workflow and exits 1 afterwards if any disable failed.
+- REJECTED: push race with a human push to main mid-run producing exit 3 + issue (concurrency group serializes syncs; body names "moved during the run"; next run closes it).
+- REJECTED: committing the sandbox harness (orchestrator decided harness stays outside the repo; fork has no CI).
+- PROOF STEP (not code): verify the schedule trigger is active on the fork after merge.

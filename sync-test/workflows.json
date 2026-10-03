@@ -1,0 +1,8 @@
+{"workflows":[
+ {"id":1,"state":"active","path":".github/workflows/ci.yml"},
+ {"id":2,"state":"active","path":".github/workflows/fork-sync-upstream.yml"},
+ {"id":3,"state":"disabled_manually","path":".github/workflows/release.yml"},
+ {"id":4,"state":"active","path":"dynamic/github-code-scanning/codeql"},
+ {"id":5,"state":"active","path":".github/workflows/new-upstream.yml"},
+ {"id":6,"state":"active","path":".github/workflows/fork-mac-build.yml"}
+]}

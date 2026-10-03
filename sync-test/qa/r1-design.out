@@ -1,0 +1,8 @@
+FINDINGS:
+- .github/workflows/fork-sync-upstream.yml:57 | major | Design | A local fallback push imports a new scheduled upstream workflow, or its schedule fires between an automated push and cleanup -> inherited workflows can run; `[skip ci]` only suppresses push/PR triggers, and the local script never disables workflows | Enforce workflow exclusion when imported workflows become visible, covering both automated and local syncs | sites: .github/workflows/fork-sync-upstream.yml:57, scripts/fork/sync-upstream.sh:43, scripts/fork/quiet-upstream-workflows.sh:9
+- scripts/fork/report-sync-outcome.sh:45 | minor | Design | A branch rule rejects a push that includes workflow changes despite a valid PAT -> the issue directs the maintainer to add or renew credentials instead of explaining the rejection | Remove the inferred-cause branch; report the push failure and direct the maintainer to Git's actual reason, with token guidance conditional | sites: scripts/fork/report-sync-outcome.sh:45, scripts/fork/report-sync-outcome.sh:51
+
+COVERED: .github/workflows/fork-sync-upstream.yml, scripts/fork/quiet-upstream-workflows.sh, scripts/fork/report-sync-outcome.sh, scripts/fork/sync-upstream.sh
+
+Codex session ID: 01a0fe04-3d9f-7462-b06e-53877e35afef
+Resume in Codex: codex resume 01a0fe04-3d9f-7462-b06e-53877e35afef

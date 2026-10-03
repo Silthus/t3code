@@ -1,0 +1,9 @@
+FINDINGS:
+
+- .github/workflows/fork-sync-upstream.yml:59 | major | Adversary | Enabling fork workflows before the first sync, or importing a new scheduled workflow with `FORK_SYNC_TOKEN`, leaves inherited workflows runnable until this final step. Existing Release runs every 30 minutes; `[skip ci]` does not suppress schedules -> inherited workflows can execute before being disabled | Bootstrap by enabling only the fork workflow, and prevent newly imported inherited workflows from becoming runnable before publishing them | sites: .github/workflows/fork-sync-upstream.yml:59, scripts/fork/sync-upstream.sh:35, scripts/fork/sync-upstream.sh:43
+- scripts/fork/quiet-upstream-workflows.sh:16 | minor | Adversary | One disable request returns a transient API error -> `set -e` exits the loop, leaving all later inherited workflows active until another run | Retry transient failures, attempt every listed workflow, and return an aggregate failure afterward | sites: scripts/fork/quiet-upstream-workflows.sh:16
+
+COVERED: .github/workflows/fork-sync-upstream.yml; scripts/fork/quiet-upstream-workflows.sh; scripts/fork/report-sync-outcome.sh; scripts/fork/sync-upstream.sh
+
+Codex session ID: 01a0fe04-3ea5-7043-acf1-6340d4c0a46c
+Resume in Codex: codex resume 01a0fe04-3ea5-7043-acf1-6340d4c0a46c

@@ -1,0 +1,8 @@
+FINDINGS:
+
+- .github/workflows/fork-sync-upstream.yml:57 | major | Tests | An inherited workflow is active and receives a scheduled, PR, or manual event before the final quiet step -> it can start on the fork, violating “must never run”; the harness tests quiet independently and cannot detect this window | Establish prevention before inherited events can run, including workflows newly introduced by a sync, and verify that policy through GitHub event tests; post-run disabling alone cannot prove the goal | sites: .github/workflows/fork-sync-upstream.yml:57, scripts/fork/quiet-upstream-workflows.sh:16
+
+COVERED: .github/workflows/fork-sync-upstream.yml, scripts/fork/quiet-upstream-workflows.sh, scripts/fork/report-sync-outcome.sh, scripts/fork/sync-upstream.sh
+
+Codex session ID: 01a0fe04-3ed7-7fc0-9cc0-6b98c4be7601
+Resume in Codex: codex resume 01a0fe04-3ed7-7fc0-9cc0-6b98c4be7601

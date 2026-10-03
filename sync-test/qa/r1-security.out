@@ -1,0 +1,13 @@
+FINDINGS:
+(none)
+
+COVERED:
+- `.github/workflows/fork-sync-upstream.yml`
+- `scripts/fork/quiet-upstream-workflows.sh`
+- `scripts/fork/report-sync-outcome.sh`
+- `scripts/fork/sync-upstream.sh`
+
+Reviewed all changed hunks for access control, injection, secret exposure, and CI supply-chain risks. No concrete hostile-caller exploit met the reporting criteria. Shell syntax checks passed.
+
+Codex session ID: 01a0fe04-3c7c-7b31-a5b6-0c7286849d3a
+Resume in Codex: codex resume 01a0fe04-3c7c-7b31-a5b6-0c7286849d3a

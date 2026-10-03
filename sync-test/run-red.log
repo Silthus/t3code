@@ -1,0 +1,186 @@
+warning: You appear to have cloned an empty repository.
+== A: already up to date
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |  * [new branch]      main       -> upstream/main
+    | sync-upstream: main already contains upstream 9bba2cb
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+  ok   exit 0
+  ok   no issue writes
+== B: dirty tree refused
+    | sync-upstream: working tree has uncommitted changes
+  ok   exit 1
+== C: not on main refused
+    | sync-upstream: check out main first
+  ok   exit 1
+== D: clean upstream change merges and pushes
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |    9bba2cb..eeb02d6  main       -> upstream/main
+    | Merge made by the 'ort' strategy.
+    |  up.txt | 1 +
+    |  1 file changed, 1 insertion(+)
+    |  create mode 100644 up.txt
+    | To /home/coder/dev/wf-triage/sync-test/work/origin.git
+    |    9bba2cb..55d3a6a  HEAD -> main
+    | sync-upstream: merged upstream eeb02d6 into main
+  ok   exit 0
+  ok   origin main contains upstream
+  ok   merge commit, not fast-forward
+    merge subject: Merge upstream pingdotgg/t3code main (eeb02d6) [skip ci]
+== E: local commit not on origin refused
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | sync-upstream: local main has commits that are not on origin/main; push or drop them first
+  ok   exit 1
+== E2: stale local main fast-forwards, then merges
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    |    55d3a6a..7154a77  main       -> origin/main
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |    eeb02d6..951569f  main       -> upstream/main
+    | Merge made by the 'ort' strategy.
+    |  up.txt | 2 +-
+    |  1 file changed, 1 insertion(+), 1 deletion(-)
+    | To /home/coder/dev/wf-triage/sync-test/work/origin.git
+    |    7154a77..c723b62  HEAD -> main
+    | sync-upstream: merged upstream 951569f into main
+  ok   exit 0
+  ok   origin keeps fork work
+  ok   origin has upstream two
+== F: conflict leaves merge in progress and reports
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |    951569f..e9c1aa5  main       -> upstream/main
+    | Auto-merging shared.txt
+    | CONFLICT (content): Merge conflict in shared.txt
+    | Automatic merge failed; fix conflicts and then commit the result.
+    | sync-upstream: conflicts with upstream e9c1aa5:
+    | shared.txt
+    | https://example.test/issues/99
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+    | [gh] label create upstream-sync-conflict -R Silthus/t3code --color d93f0b --description Scheduled upstream merge into main needs a human --force
+    | [gh] issue create -R Silthus/t3code --title Upstream sync is blocked --label upstream-sync-conflict --body <multiline:Upstream `pingdotgg/t3code` main (`e9c1aa5`) does not merge cleanly into fork `main` (`fc50e8d`).>
+    body:
+    > Upstream `pingdotgg/t3code` main (`e9c1aa5`) does not merge cleanly into fork `main` (`fc50e8d`).
+    > 
+    > Conflicting files:
+    > 
+    > - `shared.txt`
+    > 
+    > Resolve it locally from a clean checkout of `main`:
+    > 
+    > ```sh
+    > scripts/fork/sync-upstream.sh   # stops with the merge in progress
+    > # resolve the files above, then
+    > git commit --no-edit && git push origin main
+    > ```
+    > 
+    > The next scheduled sync closes this issue. Run: https://example.test/run/1
+  ok   exit 2, report 2
+  ok   merge in progress
+  ok   issue created
+  ok   body lists shared.txt
+  FAIL body stages before committing
+  FAIL body ends the manual path by dispatching the sync
+== G: conflict again with an open issue updates it
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | Auto-merging shared.txt
+    | CONFLICT (content): Merge conflict in shared.txt
+    | Automatic merge failed; fix conflicts and then commit the result.
+    | sync-upstream: conflicts with upstream e9c1aa5:
+    | shared.txt
+    | updated issue #42
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+    | [gh] label create upstream-sync-conflict -R Silthus/t3code --color d93f0b --description Scheduled upstream merge into main needs a human --force
+    | [gh] issue edit 42 -R Silthus/t3code --body <multiline:Upstream `pingdotgg/t3code` main (`e9c1aa5`) does not merge cleanly into fork `main` (`fc50e8d`).>
+  ok   exit 2
+  ok   issue 42 edited, none created
+== H: resolved by hand, next sync closes the issue
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | sync-upstream: main already contains upstream e9c1aa5
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+    | [gh] issue close 42 -R Silthus/t3code --comment Fork `main` contains upstream `e9c1aa5` again. Run: https://example.test/run/1
+  ok   exit 0
+  ok   issue 42 closed
+== I: refused push of an upstream workflow change names the token
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |    e9c1aa5..fd93a6a  main       -> upstream/main
+    | Merge made by the 'ort' strategy.
+    |  .github/workflows/new.yml | 1 +
+    |  1 file changed, 1 insertion(+)
+    |  create mode 100644 .github/workflows/new.yml
+    | remote: refusing to allow a GitHub App to create or update workflow without workflows permission        
+    | To /home/coder/dev/wf-triage/sync-test/work/origin.git
+    |  ! [remote rejected] HEAD -> main (pre-receive hook declined)
+    | error: failed to push some refs to '/home/coder/dev/wf-triage/sync-test/work/origin.git'
+    | sync-upstream: push to origin main was refused
+    | https://example.test/issues/99
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+    | [gh] label create upstream-sync-conflict -R Silthus/t3code --color d93f0b --description Scheduled upstream merge into main needs a human --force
+    | [gh] issue create -R Silthus/t3code --title Upstream sync is blocked --label upstream-sync-conflict --body <multiline:Upstream `pingdotgg/t3code` main (`fd93a6a`) merged cleanly, but the push to fork `main` was refused.>
+    body:
+    > Upstream `pingdotgg/t3code` main (`fd93a6a`) merged cleanly, but the push to fork `main` was refused.
+    > 
+    > Upstream changed workflow files, which only a token with Workflows write can push:
+    > 
+    > - `.github/workflows/new.yml`
+    > 
+    > Add or renew the `FORK_SYNC_TOKEN` secret: a fine-grained PAT for `Silthus/t3code` with Contents and Workflows read/write. Or run `scripts/fork/sync-upstream.sh` locally.
+    > 
+    > Run: https://example.test/run/1
+  ok   exit 3
+  ok   body names the workflow file and FORK_SYNC_TOKEN
+  FAIL body points to git's reason
+  ok   origin main unchanged
+== J: refused push without workflow changes gets the generic reason
+    | From /home/coder/dev/wf-triage/sync-test/work/origin
+    |  * branch            main       -> FETCH_HEAD
+    | From file:///home/coder/dev/wf-triage/sync-test/work/upstream
+    |    fd93a6a..a60d748  main       -> upstream/main
+    | Merge made by the 'ort' strategy.
+    |  up.txt | 2 +-
+    |  1 file changed, 1 insertion(+), 1 deletion(-)
+    | remote: protected branch        
+    | To /home/coder/dev/wf-triage/sync-test/work/origin.git
+    |  ! [remote rejected] HEAD -> main (pre-receive hook declined)
+    | error: failed to push some refs to '/home/coder/dev/wf-triage/sync-test/work/origin.git'
+    | sync-upstream: push to origin main was refused
+    | https://example.test/issues/99
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+    | [gh] label create upstream-sync-conflict -R Silthus/t3code --color d93f0b --description Scheduled upstream merge into main needs a human --force
+    | [gh] issue create -R Silthus/t3code --title Upstream sync is blocked --label upstream-sync-conflict --body <multiline:Upstream `pingdotgg/t3code` main (`a60d748`) merged cleanly, but the push to fork `main` was refused.>
+    body:
+    > Upstream `pingdotgg/t3code` main (`a60d748`) merged cleanly, but the push to fork `main` was refused.
+    > 
+    > Fork `main` moved during the run, or a rule or an expired `FORK_SYNC_TOKEN` refused the push. The run log has git's reason.
+    > 
+    > Run: https://example.test/run/1
+  ok   exit 3
+  ok   generic body
+== L: failure status passes through without issue writes
+    | [gh] issue list -R Silthus/t3code --label upstream-sync-conflict --state open --json number --jq .[0].number // empty
+  ok   exit 1
+  ok   no issue writes
+== K: quiet disables active non-fork workflows only
+    | disabled .github/workflows/ci.yml
+    | disabled .github/workflows/new-upstream.yml
+    | [gh] api --paginate repos/Silthus/t3code/actions/workflows --jq <multiline:.workflows[]>
+    | [gh] api --silent -X PUT repos/Silthus/t3code/actions/workflows/1/disable
+    | [gh] api --silent -X PUT repos/Silthus/t3code/actions/workflows/5/disable
+  ok   exit 0
+  ok   disables 1 and 5 only
+== K2: a failed disable does not stop the sweep, and fails it
+    | HTTP 502
+    | [gh] api --paginate repos/Silthus/t3code/actions/workflows --jq <multiline:.workflows[]>
+    | [gh] api --silent -X PUT repos/Silthus/t3code/actions/workflows/1/disable
+  ok   exit non-zero
+  FAIL still disables 5
+== 29 passed, 4 failed

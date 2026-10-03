@@ -1,0 +1,19 @@
+.                                        | [WARN] Unsupported engine: wanted: {"node":"^24.13.1"} (current: {"node":"v22.20.0","pnpm":"11.10.0"})
+Scope: 9 of 16 workspace projects
+✓ Lockfile passes supply-chain policies (verified 25m ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+.                                        | +799 ++++++++++++++++++++++++++++++++
+Progress: resolved 799, reused 798, downloaded 0, added 221
+Progress: resolved 799, reused 798, downloaded 0, added 453
+Progress: resolved 799, reused 798, downloaded 0, added 469
+Progress: resolved 799, reused 798, downloaded 0, added 767
+Progress: resolved 799, reused 798, downloaded 0, added 770
+Progress: resolved 799, reused 798, downloaded 0, added 796
+Progress: resolved 799, reused 798, downloaded 0, added 797
+Progress: resolved 799, reused 798, downloaded 0, added 798
+Progress: resolved 799, reused 798, downloaded 0, added 799
+Progress: resolved 799, reused 798, downloaded 0, added 799, done
+Done in 16.4s using pnpm v11.10.0
+exit 0
+/dev/root       193G  191G  2.1G  99% /
