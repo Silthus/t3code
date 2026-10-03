@@ -87,6 +87,17 @@ describe("status (audit-prs classify without Jev)", () => {
     expect(result.nextAction).toBe("Judge the bot findings, then comment /trunk merge");
   });
 
+  it.each([
+    ["resolved", resolved(botThread)],
+    ["outdated", { ...botThread, isOutdated: true }],
+    ["answered", { ...botThread, lastAuthor: VIEWER, awaitingAuthor: false }],
+  ])("keeps a bot thread that is %s out of the merge decision", (_kind, thread) => {
+    expect(classify({ review: "approved", threads: [thread] })).toMatchObject({
+      nextAction: "Comment /trunk merge",
+      openQuestions: [],
+    });
+  });
+
   it("never calls a draft finished", () => {
     const result = classify({ isDraft: true });
     expect(result.nextAction).toBe("Finish the implementation");
@@ -98,6 +109,21 @@ describe("status (audit-prs classify without Jev)", () => {
     expect(classify({ review: "changes-requested", mergeable: "CONFLICTING" }).status).toBe(
       "changes-requested",
     );
+  });
+
+  it("orders hard blockers as conflicts, then failing CI, then Trunk removal", () => {
+    const failingCi = ci({ state: "failing", failing: ["test"] });
+    const trunk = { managed: true, failed: true, message: null };
+    const all = classify({ mergeable: "CONFLICTING", ci: failingCi, trunk });
+    expect(all).toMatchObject({
+      nextAction: "Resolve merge conflicts",
+      blockers: [
+        "Resolve merge conflicts",
+        "Fix failing CI: test",
+        "Trunk removed the PR from the merge queue",
+      ],
+    });
+    expect(classify({ ci: failingCi, trunk }).nextAction).toBe("Fix failing CI: test");
   });
 
   it("ranks a hard blocker above an unanswered human thread", () => {
