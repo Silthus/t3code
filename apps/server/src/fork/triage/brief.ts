@@ -104,7 +104,7 @@ export const makeReadBrief = Effect.gen(function* () {
       })
       .pipe(
         Effect.map((result) => (result.stdoutTruncated ? null : result.stdout)),
-        Effect.catch(() => Effect.succeed(null)),
+        Effect.orElseSucceed(() => null),
       );
     const head = yield* github.execute({
       cwd,

@@ -23,6 +23,7 @@ import recordedPage from "./fixtures/searchPage.json" with { type: "json" };
 import * as TriageService from "./TriageService.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown));
 const key = (number: number): TriageAssessInput => ({
   host: "github.com",
   repository: "acme/app",
@@ -436,7 +437,7 @@ it.effect("retains a cached newer head when the old job completes during refresh
       const report = yield* Fiber.join(concurrent);
       assert.strictEqual(report.pullRequests[0]!.judgement._tag, "ready");
       assert.strictEqual(report.pullRequests[0]!.headSha, "new-head");
-      assert.deepStrictEqual(JSON.parse((yield* memory.get(id))!), cached);
+      assert.deepStrictEqual(decodeJson((yield* memory.get(id))!), cached);
     }).pipe(Effect.provide(fake.layer));
   }).pipe(Effect.provide(KeyValueStore.layerMemory)),
 );
