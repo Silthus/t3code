@@ -149,6 +149,7 @@ it.effect("classifies every PR of the recorded search page into the report", () 
     );
     assert.strictEqual(request!.acceptNotModified, true);
     assert.include(request!.query, "rateLimit { cost limit remaining resetAt }");
+    assert.include(request!.query, "search(query: $q, type: ISSUE, first: 25, after: $after)");
   }).pipe(Effect.provide(github.layer));
 });
 
@@ -224,23 +225,44 @@ it.effect("retries a 502 from GitHub after a one second backoff", () => {
   }).pipe(Effect.provide(github.layer));
 });
 
-it.effect("gives up after four attempts when GitHub keeps answering 504", () => {
-  const github = fakeGitHub([httpFailure(504)]);
+it.effect("retries a GraphQL timeout that GitHub answers with HTTP 200", () => {
+  const github = fakeGitHub([httpFailure(200), recorded]);
   return Effect.gen(function* () {
     const read = yield* report().pipe(Effect.forkChild({ startImmediately: true }));
-    yield* TestClock.adjust("6 seconds");
+    yield* TestClock.adjust("1 second");
     const current = yield* Fiber.join(read);
 
-    assert.deepStrictEqual(
-      github.requests.map((request) => request.at),
-      [0, 1_000, 3_000, 6_000],
-    );
-    assert.strictEqual(current.error, "GitHub read failed: GitHub CLI command failed (HTTP 504).");
-    assert.isNotNull(current.error);
-    assert.deepStrictEqual(current.pullRequests, []);
-    assert.isNull(current.fetchedAt);
+    assert.strictEqual(github.requests.length, 2);
+    assert.strictEqual(current.error, null);
+    assert.lengthOf(current.pullRequests, 5);
   }).pipe(Effect.provide(github.layer));
 });
+
+it.effect.each([
+  { status: 504, error: "GitHub read failed: GitHub CLI command failed (HTTP 504)." },
+  {
+    status: 200,
+    error: "GitHub read failed: GitHub answered the search with a GraphQL error 4 times.",
+  },
+] as const)(
+  "gives up after four attempts when GitHub keeps answering $status",
+  ({ status, error }) => {
+    const github = fakeGitHub([httpFailure(status)]);
+    return Effect.gen(function* () {
+      const read = yield* report().pipe(Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("6 seconds");
+      const current = yield* Fiber.join(read);
+
+      assert.deepStrictEqual(
+        github.requests.map((request) => request.at),
+        [0, 1_000, 3_000, 6_000],
+      );
+      assert.strictEqual(current.error, error);
+      assert.deepStrictEqual(current.pullRequests, []);
+      assert.isNull(current.fetchedAt);
+    }).pipe(Effect.provide(github.layer));
+  },
+);
 
 it.effect("keeps the last good PRs and reports the error when a later read fails", () => {
   const github = fakeGitHub([
