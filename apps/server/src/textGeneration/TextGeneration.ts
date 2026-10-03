@@ -82,10 +82,11 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
-export interface JudgementGenerationInput<S extends Schema.Top> {
+export interface JudgementGenerationInput<A> {
   cwd: string;
   prompt: string;
-  outputSchema: S;
+  /** The model answers in this schema's JSON shape, so it must decode that JSON unchanged. */
+  outputSchema: Schema.Codec<A, NoInfer<A>>;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
 }
@@ -123,9 +124,9 @@ export class TextGeneration extends Context.Service<
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
 
     /** Answer a prompt with structured output decoded by the caller's schema. */
-    readonly generateJudgement?: <S extends Schema.Top>(
-      input: JudgementGenerationInput<S>,
-    ) => Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
+    readonly generateJudgement?: <A>(
+      input: JudgementGenerationInput<A>,
+    ) => Effect.Effect<A, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 

@@ -134,17 +134,7 @@ describe("TextGeneration.make", () => {
         }),
       );
 
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([personal, work]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
+      const tg = yield* makeWithInstances([personal, work]);
 
       const result = yield* tg.generateBranchName({
         cwd: process.cwd(),
@@ -159,17 +149,7 @@ describe("TextGeneration.make", () => {
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>
     Effect.gen(function* () {
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
+      const tg = yield* makeWithInstances([]);
 
       const result = yield* tg
         .generateBranchName({
@@ -238,6 +218,27 @@ describe("TextGeneration.make", () => {
       expect(error._tag).toBe("TextGenerationError");
       expect(error.operation).toBe("generateJudgement");
       expect(error.detail).toContain("opencode");
+    }),
+  );
+
+  it.effect("refuses a schema whose decoded shape differs from the JSON the model returns", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("claudeAgent");
+      const tg = yield* makeWithInstances([
+        makeStubInstance(instanceId, makeStubTextGeneration({})),
+      ]);
+
+      const error = yield* Effect.flip(
+        tg.generateJudgement!({
+          cwd: process.cwd(),
+          prompt: "Score this pull request.",
+          // @ts-expect-error The model answers with the JSON schema of the decoded type, so a transformed field could never decode.
+          outputSchema: Schema.Struct({ score: Schema.NumberFromString }),
+          modelSelection: createModelSelection(instanceId, "any-model"),
+        }),
+      );
+
+      expect(error.operation).toBe("generateJudgement");
     }),
   );
 });

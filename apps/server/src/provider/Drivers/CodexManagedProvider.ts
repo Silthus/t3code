@@ -237,10 +237,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
     resolveRuntime,
   );
-  const protect = <A, R = never>(
-    operation: string,
-    effect: Effect.Effect<A, TextGenerationError, R>,
-  ) =>
+  const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
     runtime.auth.controller.withAccess!(effect).pipe(
       Effect.scoped,
       Effect.mapError(

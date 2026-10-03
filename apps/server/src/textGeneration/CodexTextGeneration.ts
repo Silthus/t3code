@@ -455,9 +455,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
-  const generateJudgement = Effect.fn("CodexTextGeneration.generateJudgement")(function* <
-    S extends Schema.Top,
-  >(input: TextGeneration.JudgementGenerationInput<S>) {
+  const generateJudgement = Effect.fn("CodexTextGeneration.generateJudgement")(function* <A>(
+    input: TextGeneration.JudgementGenerationInput<A>,
+  ) {
     return yield* runCodexJson({
       operation: "generateJudgement",
       cwd: input.cwd,

@@ -413,9 +413,9 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
-  const generateJudgement = Effect.fn("ClaudeTextGeneration.generateJudgement")(function* <
-    S extends Schema.Top,
-  >(input: TextGeneration.JudgementGenerationInput<S>) {
+  const generateJudgement = Effect.fn("ClaudeTextGeneration.generateJudgement")(function* <A>(
+    input: TextGeneration.JudgementGenerationInput<A>,
+  ) {
     return yield* runClaudeJson({
       operation: "generateJudgement",
       cwd: input.cwd,
