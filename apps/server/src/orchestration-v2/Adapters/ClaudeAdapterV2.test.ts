@@ -2401,9 +2401,44 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly globalSettings?: boolean;
     readonly profile?: boolean;
     readonly resolvedModel?: string;
+    readonly platform?: NodeJS.Platform;
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
   }> = [
+    ...(["darwin", "win32", "freebsd"] as const).map((platform) => ({
+      name: `${platform} managed policy cannot be inferred`,
+      platform,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
+    ...["CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_HOST_CREDS_FILE"].flatMap((key) =>
+      ([undefined, "user settings", "project settings", "global settings"] as const).map(
+        (source) => ({
+          name: `${source ?? "inherited"} host-managed ${key}`,
+          ...(source === "user settings" || source === "project settings" ? { source } : {}),
+          ...(source === undefined
+            ? {
+                environment: {
+                  [key]:
+                    key === "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
+                      ? "1"
+                      : "/fixture/host-creds.json",
+                },
+              }
+            : {
+                settingsEnv: {
+                  [key]:
+                    key === "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
+                      ? "1"
+                      : "/fixture/host-creds.json",
+                },
+              }),
+          ...(source === "global settings" ? { globalSettings: true } : {}),
+          expectedReset: null,
+          expectedProbe: false,
+        }),
+      ),
+    ),
     {
       name: "project settings proxy credentials",
       source: "project settings",
@@ -2848,6 +2883,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       assert.lengthOf(harness.terminalEvents(), 1);
     }).pipe(
+      Effect.provideService(HostProcessPlatform, scenario.platform ?? "linux"),
       Effect.provide(
         Layer.mergeAll(IdAllocator.layer, NodeServices.layer, NodeHttpServer.layerTest),
       ),
