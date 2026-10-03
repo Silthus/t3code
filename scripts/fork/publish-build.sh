@@ -29,7 +29,7 @@ remove_other_assets() {
   gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
     while read -r name; do
       if [[ "$name" != "$stable" ]]; then
-        gh release delete-asset "$tag" "$name" -R "$GITHUB_REPOSITORY" --yes
+        gh release delete-asset "$tag" "$name" -R "$GITHUB_REPOSITORY" --yes || return 1
       fi
     done
 }
