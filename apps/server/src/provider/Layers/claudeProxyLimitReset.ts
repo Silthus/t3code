@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import type { ClaudeSettings } from "@t3tools/contracts";
@@ -30,9 +31,10 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
   readonly settings: ClaudeSettings;
   readonly cwd: string | null;
 }) {
+  const flags = parseCliArgs(input.settings.launchArgs).flags;
   if (
-    /--(?:settings|setting-sources|managed-settings|bare)(?:[=\s]|$)/.test(
-      input.settings.launchArgs,
+    ["settings", "setting-sources", "managed-settings", "bare"].some((flag) =>
+      Object.hasOwn(flags, flag),
     )
   )
     return null;

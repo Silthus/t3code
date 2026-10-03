@@ -2043,6 +2043,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
 
   const makeWakeHarnessWithOptions = (options?: {
+    readonly launchArgs?: string;
     readonly close?: (sdkMessages: Queue.Queue<SDKMessage>) => Effect.Effect<void>;
     readonly interrupt?: Effect.Effect<void>;
     readonly environment?: NodeJS.ProcessEnv;
@@ -2070,7 +2071,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
       const adapter = ClaudeAdapterV2.makeClaudeAdapterV2({
         instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-        settings: DEFAULT_CLAUDE_SETTINGS,
+        settings: {
+          ...DEFAULT_CLAUDE_SETTINGS,
+          launchArgs: options?.launchArgs ?? DEFAULT_CLAUDE_SETTINGS.launchArgs,
+        },
         environment: options?.environment ?? {},
         attachmentsDir,
         fileSystem,
@@ -2366,6 +2370,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   const proxyResetCases: ReadonlyArray<{
     readonly name: string;
+    readonly launchArgs?: string;
     readonly source?: "user settings" | "api key";
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
@@ -2380,6 +2385,24 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
   }> = [
+    {
+      name: "settings flag mentioned in quoted prompt",
+      launchArgs: '--append-system-prompt "mention --settings here"',
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    ...[
+      "--settings /fixture-settings.json",
+      "--settings=/fixture-settings.json",
+      "--setting-sources user",
+      "--managed-settings={}",
+      "--bare",
+    ].map((launchArgs) => ({
+      name: `settings selection ${launchArgs}`,
+      launchArgs,
+      expectedReset: null,
+      expectedProbe: false,
+    })),
     {
       name: "profile home override",
       source: "user settings",
@@ -2553,6 +2576,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
       }
       const harness = yield* makeWakeHarnessWithOptions({
+        launchArgs: scenario.launchArgs,
         environment: {
           CLAUDE_CONFIG_DIR: configDir,
           XDG_CONFIG_HOME: configDir,
