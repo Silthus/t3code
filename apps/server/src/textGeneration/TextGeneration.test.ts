@@ -4,7 +4,7 @@ import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect } from "vite-plus/test";
+import { describe, expect, expectTypeOf } from "vite-plus/test";
 
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -174,28 +174,29 @@ describe("TextGeneration.make", () => {
   it.effect("forwards a judgement to the selected instance", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("claudeAgent");
-      const prompts: string[] = [];
+      const received: unknown[] = [];
       const instance = makeStubInstance(
         instanceId,
         makeStubTextGeneration({
           generateJudgement: (input) => {
-            prompts.push(input.prompt);
+            received.push(input);
             const decodeJudgement = Schema.decodeUnknownEffect(input.outputSchema);
             return decodeJudgement({ verdict: "safe" }).pipe(Effect.orDie);
           },
         }),
       );
       const tg = yield* makeWithInstances([instance]);
-
-      const judgement = yield* tg.generateJudgement!({
-        cwd: process.cwd(),
+      const input = {
+        cwd: "/tmp/judge",
         prompt: "Judge this pull request.",
         outputSchema: Schema.Struct({ verdict: Schema.String }),
         modelSelection: createModelSelection(instanceId, "claude-sonnet-4-6"),
-      });
+      };
+
+      const judgement = yield* tg.generateJudgement!(input);
 
       expect(judgement).toEqual({ verdict: "safe" });
-      expect(prompts).toEqual(["Judge this pull request."]);
+      expect(received).toEqual([input]);
     }),
   );
 
@@ -221,24 +222,12 @@ describe("TextGeneration.make", () => {
     }),
   );
 
-  it.effect("refuses a schema whose decoded shape differs from the JSON the model returns", () =>
-    Effect.gen(function* () {
-      const instanceId = ProviderInstanceId.make("claudeAgent");
-      const tg = yield* makeWithInstances([
-        makeStubInstance(instanceId, makeStubTextGeneration({})),
-      ]);
+  it("accepts only schemas that decode the model's JSON unchanged", () => {
+    type JudgementSchema = TextGeneration.JudgementGenerationInput<{
+      readonly score: number;
+    }>["outputSchema"];
 
-      const error = yield* Effect.flip(
-        tg.generateJudgement!({
-          cwd: process.cwd(),
-          prompt: "Score this pull request.",
-          // @ts-expect-error The model answers with the JSON schema of the decoded type, so a transformed field could never decode.
-          outputSchema: Schema.Struct({ score: Schema.NumberFromString }),
-          modelSelection: createModelSelection(instanceId, "any-model"),
-        }),
-      );
-
-      expect(error.operation).toBe("generateJudgement");
-    }),
-  );
+    expectTypeOf(Schema.Struct({ score: Schema.Number })).toExtend<JudgementSchema>();
+    expectTypeOf(Schema.Struct({ score: Schema.NumberFromString })).not.toExtend<JudgementSchema>();
+  });
 });

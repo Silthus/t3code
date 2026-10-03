@@ -462,7 +462,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       operation: "generateJudgement",
       cwd: input.cwd,
       prompt: input.prompt,
-      outputSchemaJson: input.outputSchema,
+      outputSchemaJson: Schema.toCodecJson(input.outputSchema),
       modelSelection: input.modelSelection,
     });
   });

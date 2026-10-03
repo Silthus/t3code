@@ -92,7 +92,7 @@ export interface JudgementGenerationInput<A> {
 }
 
 /**
- * TextGeneration - Service tag for commit and change request text generation.
+ * TextGeneration - Service tag for commit, change request, and structured judgement text generation.
  */
 export class TextGeneration extends Context.Service<
   TextGeneration,

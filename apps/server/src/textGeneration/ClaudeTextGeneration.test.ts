@@ -607,6 +607,29 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("decodes a judgement field that JSON carries as a string", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { linesChanged: "12" } }),
+        argsMustContain: '"linesChanged":{"type":"string"',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Count the changed lines.",
+            outputSchema: Schema.Struct({ linesChanged: Schema.BigInt }),
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          });
+
+          expect(judgement).toEqual({ linesChanged: 12n });
+        }),
+    ),
+  );
+
   it.effect("rejects a judgement that does not match the caller's schema", () =>
     withFakeClaudeEnv(
       {

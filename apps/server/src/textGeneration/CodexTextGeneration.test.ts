@@ -188,6 +188,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
         output: JSON.stringify({ verdict: "risky", reason: "Touches the billing path" }),
         schemaMustContain: '"verdict":{"type":"string","enum":["safe","risky"]}',
         stdinMustContain: "Judge this pull request.",
+        requireArg: "--model gpt-5.4-mini",
       },
       (textGeneration) =>
         Effect.gen(function* () {
@@ -202,6 +203,26 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
           });
 
           expect(judgement).toEqual({ verdict: "risky", reason: "Touches the billing path" });
+        }),
+    ),
+  );
+
+  it.effect("decodes a judgement field that JSON carries as a string", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ linesChanged: "12" }),
+        schemaMustContain: '"linesChanged":{"type":"string"',
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const judgement = yield* textGeneration.generateJudgement!({
+            cwd: process.cwd(),
+            prompt: "Count the changed lines.",
+            outputSchema: Schema.Struct({ linesChanged: Schema.BigInt }),
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+
+          expect(judgement).toEqual({ linesChanged: 12n });
         }),
     ),
   );
