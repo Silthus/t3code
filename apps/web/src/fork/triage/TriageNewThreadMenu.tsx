@@ -71,6 +71,12 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
     ) ??
     null;
   const { start, preparing } = useStartTriageThread(targetProject);
+  const targetEnvironment = environments.find(
+    (environment) => environment.environmentId === targetProject?.environmentId,
+  );
+  const projectLabel = targetProject
+    ? `${targetProject.title}${targetEnvironment ? ` (${targetEnvironment.label})` : ""}`
+    : "Choose a project";
   const fieldId = useId();
   const canStart = targetProject !== null && (preset !== "custom" || instruction.trim().length > 0);
   const openPreset = (choice: TriageThreadPreset) => {
@@ -131,7 +137,7 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
                     <Label id={`${fieldId}-project`}>Project</Label>
                     <Select value={projectKey} onValueChange={setProjectKey}>
                       <SelectTrigger aria-labelledby={`${fieldId}-project`}>
-                        <SelectValue placeholder="Choose a project" />
+                        <SelectValue placeholder="Choose a project">{projectLabel}</SelectValue>
                       </SelectTrigger>
                       <SelectPopup>
                         {environments.map((environment) => {
