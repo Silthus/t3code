@@ -160,15 +160,22 @@ export function TriageRow({ pullRequest }: { pullRequest: TriagePullRequest }) {
   const { repository, number } = pullRequest.key;
   return (
     <li className="flex flex-col gap-1 px-2 py-2">
-      <span className="flex min-w-0 items-center gap-2">
-        <a
-          href={pullRequest.url}
-          rel="noreferrer noopener"
-          target="_blank"
-          className="min-w-0 truncate text-sm hover:underline"
-        >
-          {pullRequest.title}
-        </a>
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <a
+                href={pullRequest.url}
+                rel="noreferrer noopener"
+                target="_blank"
+                className="min-w-0 truncate text-sm hover:underline"
+              />
+            }
+          >
+            {pullRequest.title}
+          </TooltipTrigger>
+          <TooltipPopup side="top">{pullRequest.title}</TooltipPopup>
+        </Tooltip>
         <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
           {repository}#{number}
         </span>

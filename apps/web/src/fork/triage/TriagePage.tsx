@@ -89,6 +89,17 @@ function ReadFailure({ report }: { report: TriageReport }) {
   );
 }
 
+function TriageNotices({ view }: { view: TriageReportView }) {
+  const { report, loadError } = view;
+  if (report?.error == null && loadError === null) return null;
+  return (
+    <WorkspacePageContainer width="wide" className="gap-1 py-2">
+      {report ? <ReadFailure report={report} /> : null}
+      {loadError !== null ? <ErrorLine message={loadError} /> : null}
+    </WorkspacePageContainer>
+  );
+}
+
 function TriageBody({
   view,
   groups,
@@ -98,16 +109,11 @@ function TriageBody({
 }) {
   const { report, loadError } = view;
   if (report === null) {
-    if (loadError !== null) return <ErrorLine message={loadError} />;
-    return <p className="text-sm text-muted-foreground">Reading your pull requests from GitHub…</p>;
+    return loadError === null ? (
+      <p className="text-sm text-muted-foreground">Reading your pull requests from GitHub…</p>
+    ) : null;
   }
-  return (
-    <>
-      <ReadFailure report={report} />
-      {loadError !== null ? <ErrorLine message={loadError} /> : null}
-      {report.fetchedAt !== null ? <TriageGroups groups={groups} /> : null}
-    </>
-  );
+  return report.fetchedAt !== null ? <TriageGroups groups={groups} /> : null;
 }
 
 function TriageHeader({
@@ -118,7 +124,10 @@ function TriageHeader({
   groups: ReadonlyArray<TriagePullRequestGroup>;
 }) {
   return (
-    <WorkspacePageHeader electron={isElectron} className="h-auto min-h-(--workspace-topbar-height)">
+    <WorkspacePageHeader
+      electron={isElectron}
+      className="h-auto min-h-(--workspace-topbar-height) py-2"
+    >
       <WorkspaceBreadcrumb ariaLabel="Triage breadcrumb">
         <WorkspaceBreadcrumbItem current>
           <h1 className="truncate">Triage</h1>
@@ -155,6 +164,7 @@ function TriageLayout({ view }: { view: TriageReportView | null }) {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <TriageHeader view={view} groups={groups} />
+        {view ? <TriageNotices view={view} /> : null}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <WorkspacePageContainer width="wide" className="gap-5">
             {view ? (
