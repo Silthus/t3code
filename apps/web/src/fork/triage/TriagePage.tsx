@@ -5,7 +5,7 @@ import type {
   TriageReport,
 } from "@t3tools/contracts";
 import { CircleAlertIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -17,6 +17,7 @@ import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { isElectron } from "~/env";
 import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { useNowMinute } from "~/hooks/useNowMinute";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
@@ -30,19 +31,8 @@ const GROUP_LABELS: Record<TriageGroup, string> = {
   drafts: "Drafts",
 };
 
-const UPDATED_LABEL_TICK_MS = 30_000;
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
 function UpdatedLabel({ updating, fetchedAt }: { updating: boolean; fetchedAt: string | null }) {
-  useNow(UPDATED_LABEL_TICK_MS);
+  useNowMinute();
   if (updating) return <span>Updating…</span>;
   if (fetchedAt === null) return null;
   return <span>Updated {formatRelativeTimeLabel(fetchedAt)}</span>;

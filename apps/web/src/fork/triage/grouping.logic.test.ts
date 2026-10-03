@@ -90,8 +90,9 @@ describe("groupTriagePullRequests", () => {
       pullRequest(3, { status: "blocked", updatedAt: "2026-09-20T09:00:00.000Z" }),
       pullRequest(4, { status: "changes-requested", updatedAt: "2026-10-02T09:00:00.000Z" }),
       pullRequest(5, { status: "waiting-ci", updatedAt: "2026-10-03T12:00:00.000Z" }),
+      pullRequest(6, { status: "waiting-ci-authorization", updatedAt: "2026-09-01T09:00:00.000Z" }),
     ];
 
-    expect(numbersByGroup(prs)).toEqual([["needs-you", [3, 4, 2, 5, 1]]]);
+    expect(numbersByGroup(prs)).toEqual([["needs-you", [3, 4, 2, 6, 5, 1]]]);
   });
 });

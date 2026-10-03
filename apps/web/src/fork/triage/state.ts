@@ -29,6 +29,20 @@ export function useTriageEnvironmentId(): EnvironmentId | null {
   return primaryEnvironmentId ?? connectedEnvironmentIds[0] ?? null;
 }
 
+interface RefreshFailure {
+  readonly message: string;
+  readonly at: number;
+}
+
+function unansweredRefreshFailure(
+  failure: RefreshFailure | null,
+  result: AsyncResult.AsyncResult<TriageReport, unknown>,
+): string | null {
+  if (failure === null) return null;
+  const answeredLater = result._tag === "Success" && result.timestamp > failure.at;
+  return answeredLater ? null : `Refresh failed: ${failure.message}`;
+}
+
 export interface TriageReportView {
   readonly report: TriageReport | null;
   readonly loadError: string | null;
@@ -43,18 +57,19 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
   const reload = useAtomRefresh(atom);
   const runGitHubRead = useAtomQueryRunner(triageReport, { refresh: true, reportFailure: false });
   const [readingGitHub, setReadingGitHub] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshFailure, setRefreshFailure] = useState<RefreshFailure | null>(null);
 
   const refreshFromGitHub = async () => {
     setReadingGitHub(true);
     try {
       const read = await runGitHubRead({ environmentId, input: GITHUB_READ });
       if (read._tag === "Failure") {
-        if (!isAtomCommandInterrupted(read))
-          setRefreshError(formatEnvironmentQueryError(read.cause));
+        if (!isAtomCommandInterrupted(read)) {
+          setRefreshFailure({ message: formatEnvironmentQueryError(read.cause), at: Date.now() });
+        }
         return;
       }
-      setRefreshError(null);
+      setRefreshFailure(null);
       reload();
     } finally {
       setReadingGitHub(false);
@@ -63,7 +78,10 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
 
   return {
     report: Option.getOrNull(AsyncResult.value(result)),
-    loadError: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : refreshError,
+    loadError:
+      result._tag === "Failure"
+        ? formatEnvironmentQueryError(result.cause)
+        : unansweredRefreshFailure(refreshFailure, result),
     updating: result.waiting || readingGitHub,
     reload,
     refreshFromGitHub,

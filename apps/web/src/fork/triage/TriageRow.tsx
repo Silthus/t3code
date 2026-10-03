@@ -159,7 +159,7 @@ export function TriageRow({ pullRequest }: { pullRequest: TriagePullRequest }) {
   const status = STATUS_PRESENTATION[pullRequest.status];
   const { repository, number } = pullRequest.key;
   return (
-    <li className="flex flex-col gap-1 rounded-md px-2 py-2 hover:bg-accent/40">
+    <li className="flex flex-col gap-1 px-2 py-2">
       <span className="flex min-w-0 items-center gap-2">
         <a
           href={pullRequest.url}
