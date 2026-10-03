@@ -129,12 +129,95 @@ describe("status (audit-prs classify without Jev)", () => {
   it("has no blockers when nothing blocks", () => {
     expect(classify({ review: "approved" }).blockers).toEqual([]);
   });
+
+  it("does not block on an outdated human thread, but still counts it", () => {
+    const result = classify({ threads: [{ ...humanThread, isOutdated: true }] });
+    expect(result.status).toBe("ready-for-review");
+    expect(result.counts.humanThreadsAwaiting).toBe(1);
+  });
+
+  it("asks whether unanswered human comments ask for changes", () => {
+    const comment = { author: "ada", body: "Why this way?", createdAt: "2026-09-22T00:00:00Z" };
+    expect(classify({ humanComments: [comment] }).openQuestions).toEqual([
+      "Do the unanswered human threads or comments ask for changes?",
+    ]);
+  });
+
+  const approvedBy = (overrides: Partial<TriageFacts>) => ({
+    review: "approved" as const,
+    approvers: [human("ada")],
+    ...overrides,
+  });
+
+  it.each([
+    ["S1", { isDraft: true }, "draft", ["Implementation still in progress"]],
+    [
+      "S2",
+      { review: "changes-requested" as const, changeRequesters: [human("ada")] },
+      "changes-requested",
+      ["Changes requested by ada"],
+    ],
+    ["S3", { mergeable: "CONFLICTING" as const }, "blocked", ["Resolve merge conflicts"]],
+    [
+      "S4",
+      { threads: [humanThread] },
+      "changes-requested",
+      ["A reviewer asked for changes in a thread", "Address 1 unresolved reviewer thread"],
+    ],
+    [
+      "S5",
+      approvedBy({ ci: ci({ state: "awaiting-authorization", awaitingAuthorization: 2 }) }),
+      "waiting-ci-authorization",
+      ["Approved by ada", "2 workflows need authorization"],
+    ],
+    [
+      "S6",
+      approvedBy({ ci: ci({ state: "cancelled", cancelled: ["test"] }) }),
+      "waiting-ci",
+      ["Approved by ada", "1 check cancelled"],
+    ],
+    [
+      "S7",
+      approvedBy({ ci: ci({ state: "pending", pending: ["test"] }) }),
+      "waiting-ci",
+      ["Approved by ada", "1 check running"],
+    ],
+    [
+      "S7",
+      approvedBy({ ci: ci({ state: "none", passed: 0 }) }),
+      "waiting-ci",
+      ["Approved by ada", "No check results yet"],
+    ],
+    [
+      "S8",
+      approvedBy({ mergeable: "UNKNOWN" }),
+      "ready-to-merge",
+      ["Approved by ada", "Mergeability not computed yet", "CI green"],
+    ],
+    [
+      "S9",
+      { ci: ci({ state: "pending", pending: ["test"] }) },
+      "ready-for-review",
+      ["No current approval", "CI running"],
+    ],
+  ] as const)("%s: gives the status and its reasons", (_row, overrides, status, reasons) => {
+    expect(classify(overrides)).toMatchObject({ status, reasons });
+  });
 });
 
 describe("signals", () => {
   it("calls a PR without a push for two weeks a modernize candidate", () => {
     expect(classify({ lastPushAt: "2026-09-01T00:00:00Z" }).signals).toEqual([
       "Stale: last push 22 days ago. Modernize candidate",
+    ]);
+  });
+
+  it("turns stale at 14 days without a push, and then hides the conflict", () => {
+    const conflicting = (lastPushAt: string) =>
+      classify({ mergeable: "CONFLICTING", lastPushAt }).signals;
+    expect(conflicting("2026-09-10T00:00:00Z")).toEqual(["Conflicts with master"]);
+    expect(conflicting("2026-09-09T00:00:00Z")).toEqual([
+      "Stale: last push 14 days ago. Modernize candidate",
     ]);
   });
 
@@ -190,6 +273,22 @@ describe("group and next action (Postpile own-PR overlay)", () => {
     });
     expect(reReview(["ada", "sol"]).nextAction).toBe("ada and sol to re-review");
     expect(reReview(["ada", "sol", "kim"]).nextAction).toBe("ada and 2 more to re-review");
+  });
+
+  it("G4: keeps a re-requested change request on the viewer while threads or blockers stand", () => {
+    const reRequested = {
+      review: "changes-requested" as const,
+      changeRequesters: [human("ada")],
+      requestedReviewers: ["ada"],
+    };
+    expect(classify({ ...reRequested, threads: [humanThread] })).toMatchObject({
+      group: "needs-you",
+      nextAction: "Answer 1 thread from alice",
+    });
+    expect(classify({ ...reRequested, mergeable: "CONFLICTING" })).toMatchObject({
+      group: "needs-you",
+      nextAction: "Resolve merge conflicts",
+    });
   });
 
   it("G4: leaves a change request on the viewer until every requester is asked again", () => {
