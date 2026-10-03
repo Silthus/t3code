@@ -344,3 +344,17 @@ it.effect("fails the read when a PR breaks the report contract", () => {
     );
   }).pipe(Effect.provide(github.layer));
 });
+
+it.effect("points at the gh login when gh fails before GitHub answers", () => {
+  const github = fakeGitHub([
+    Effect.fail(new GitHubCli.GitHubCliCommandError({ command: "gh", cwd: "/", cause: undefined })),
+  ]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+
+    assert.strictEqual(
+      current.error,
+      "GitHub read failed: GitHub CLI failed before GitHub answered. Check `gh auth status`.",
+    );
+  }).pipe(Effect.provide(github.layer));
+});

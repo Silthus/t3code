@@ -200,9 +200,10 @@ function nextCursor(page: SearchPage): Effect.Effect<string, TriageReadError> {
 function failureDetail(
   error: GitHubCli.GitHubCliError | SourceControlRateLimit.SourceControlRateLimitPausedError,
 ): string {
-  return error._tag === "GitHubCliCommandError" && error.httpStatus !== undefined
-    ? `GitHub CLI command failed (HTTP ${error.httpStatus}).`
-    : error.detail;
+  if (error._tag !== "GitHubCliCommandError") return error.detail;
+  return error.httpStatus === undefined
+    ? "GitHub CLI failed before GitHub answered. Check `gh auth status`."
+    : `GitHub CLI command failed (HTTP ${error.httpStatus}).`;
 }
 
 function visibleNodes(page: SearchPage): Array<TriagePullRequestNode> {
