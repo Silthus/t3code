@@ -83,9 +83,9 @@ function TriageGroups({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup
 function ReadFailure({ report }: { report: TriageReport }) {
   if (report.error === null) return null;
   return report.fetchedAt === null ? (
-    <ErrorLine message={`GitHub read failed: ${report.error}`} />
+    <ErrorLine message={report.error} />
   ) : (
-    <ErrorLine message={`GitHub read failed, showing the last good list: ${report.error}`} />
+    <ErrorLine message={`${report.error} Showing the last good list.`} />
   );
 }
 
