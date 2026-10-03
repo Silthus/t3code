@@ -18,6 +18,7 @@ const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
+  __T3CODE_BUILD_DESKTOP_IDENTITY__: JSON.stringify(repoEnv.T3CODE_DESKTOP_IDENTITY?.trim() ?? ""),
 };
 
 export default defineConfig({

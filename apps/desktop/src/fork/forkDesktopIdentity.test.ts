@@ -1,0 +1,147 @@
+import * as NodePathLayer from "@effect/platform-node/NodePath";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+
+import * as DesktopAppIdentity from "../app/DesktopAppIdentity.ts";
+import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { resolveDesktopIdentity } from "./forkDesktopIdentity.ts";
+
+const packagedMacInput = {
+  dirname: "/Applications/T3 Code.app/Contents/Resources/app.asar/apps/desktop/dist-electron",
+  homeDirectory: "/Users/alice",
+  platform: "darwin",
+  processArch: "arm64",
+  appVersion: "0.0.44",
+  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  isPackaged: true,
+  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  runningUnderArm64Translation: false,
+} satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
+
+const makeEnvironmentLayer = (
+  overrides: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput>,
+  env: Record<string, string | undefined> = {},
+) =>
+  DesktopEnvironment.layer({ ...packagedMacInput, ...overrides }).pipe(
+    Layer.provide(
+      Layer.mergeAll(NodeServices.layer, NodePathLayer.layerPosix, DesktopConfig.layerTest(env)),
+    ),
+  );
+
+const makeEnvironment = (
+  overrides: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput>,
+  env: Record<string, string | undefined> = {},
+) =>
+  DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
+
+describe("fork desktop identity", () => {
+  it("only the exact build value fork selects the fork identity", () => {
+    assert.equal(resolveDesktopIdentity("fork"), "fork");
+    assert.equal(resolveDesktopIdentity(" fork "), "fork");
+    assert.equal(resolveDesktopIdentity(undefined), "upstream");
+    assert.equal(resolveDesktopIdentity(""), "upstream");
+    assert.equal(resolveDesktopIdentity("Fork"), "upstream");
+  });
+
+  it.effect("keeps the upstream identity when the build has no identity switch", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment({});
+
+      assert.equal(environment.desktopIdentity, "upstream");
+      assert.equal(environment.displayName, "T3 Code (Alpha)");
+      assert.equal(environment.branding.displayName, "T3 Code (Alpha)");
+      assert.equal(environment.userDataDirName, "t3code");
+      assert.equal(environment.legacyUserDataDirName, "T3 Code (Alpha)");
+      assert.equal(environment.baseDir, "/Users/alice/.t3");
+      assert.equal(environment.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(environment.appUserModelId, "com.t3tools.t3code");
+    }),
+  );
+
+  it.effect("gives a fork build its own name, user data, and T3 home", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment({ desktopIdentity: "fork" });
+
+      assert.equal(environment.desktopIdentity, "fork");
+      assert.equal(environment.displayName, "T3 Code (Fork)");
+      assert.equal(environment.branding.displayName, "T3 Code (Fork)");
+      assert.equal(environment.userDataDirName, "t3code-fork");
+      assert.equal(environment.legacyUserDataDirName, "t3code-fork");
+      assert.equal(environment.baseDir, "/Users/alice/.t3-fork");
+      assert.equal(environment.stateDir, "/Users/alice/.t3-fork/userdata");
+      assert.equal(
+        environment.desktopSettingsPath,
+        "/Users/alice/.t3-fork/userdata/desktop-settings.json",
+      );
+    }),
+  );
+
+  it.effect("keeps the upstream version so remote servers download matching releases", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment({ desktopIdentity: "fork" });
+
+      assert.equal(environment.appVersion, "0.0.44");
+    }),
+  );
+
+  it.effect("lets T3CODE_HOME override the fork's default home", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { desktopIdentity: "fork" },
+        { T3CODE_HOME: "/tmp/fork-home" },
+      );
+
+      assert.equal(environment.baseDir, "/tmp/fork-home");
+      assert.equal(environment.stateDir, "/tmp/fork-home/userdata");
+    }),
+  );
+
+  it.effect("keeps the upstream development identity for development runs of a fork build", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { desktopIdentity: "fork", isPackaged: false },
+        { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+      );
+
+      assert.equal(environment.desktopIdentity, "upstream");
+      assert.equal(environment.displayName, "T3 Code (Dev)");
+      assert.equal(environment.userDataDirName, "t3code-dev");
+      assert.equal(environment.baseDir, "/Users/alice/.t3");
+    }),
+  );
+
+  it.effect("scopes the single-instance lock away from an installed official app", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-fork-identity-",
+      });
+      const appSupport = path.join(homeDirectory, "Library", "Application Support");
+      yield* fileSystem.makeDirectory(path.join(appSupport, "T3 Code (Alpha)"), {
+        recursive: true,
+      });
+
+      const resolveUserDataPath = (desktopIdentity: "upstream" | "fork") =>
+        DesktopAppIdentity.resolveUserDataPath.pipe(
+          Effect.provide(
+            Layer.merge(
+              makeEnvironmentLayer({ homeDirectory, desktopIdentity }),
+              NodeServices.layer,
+            ),
+          ),
+        );
+
+      assert.equal(
+        yield* resolveUserDataPath("upstream"),
+        path.join(appSupport, "T3 Code (Alpha)"),
+      );
+      assert.equal(yield* resolveUserDataPath("fork"), path.join(appSupport, "t3code-fork"));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+});
