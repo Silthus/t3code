@@ -17,6 +17,7 @@ export interface TriageThreadFacts {
   readonly author: string;
   readonly authorIsBot: boolean;
   readonly lastAuthor: string;
+  readonly lastAuthorIsBot: boolean;
   readonly lastAt: string;
   readonly awaitingAuthor: boolean;
 }

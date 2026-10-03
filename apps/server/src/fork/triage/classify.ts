@@ -274,8 +274,12 @@ function answerThreads(threads: ReadonlyArray<TriageThreadFacts>): string {
   const newest = threads.reduce((latest, thread) =>
     thread.lastAt > latest.lastAt ? thread : latest,
   );
-  const otherAuthors = new Set(threads.map((thread) => thread.lastAuthor)).size - 1;
-  return `Answer ${plural(threads.length, "thread")} from ${newest.lastAuthor}${andMore(otherAuthors)}`;
+  const otherAuthors = new Set(threads.map(humanToAnswer)).size - 1;
+  return `Answer ${plural(threads.length, "thread")} from ${humanToAnswer(newest)}${andMore(otherAuthors)}`;
+}
+
+function humanToAnswer({ author, lastAuthor, lastAuthorIsBot }: TriageThreadFacts): string {
+  return lastAuthorIsBot ? author : lastAuthor;
 }
 
 function reReview(names: ReadonlyArray<string>): string {

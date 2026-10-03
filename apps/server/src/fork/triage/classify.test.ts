@@ -49,6 +49,7 @@ const humanThread: TriageThreadFacts = {
   author: "alice",
   authorIsBot: false,
   lastAuthor: "alice",
+  lastAuthorIsBot: false,
   lastAt: "2026-09-22T00:00:00Z",
   awaitingAuthor: true,
 };
@@ -57,6 +58,7 @@ const botThread: TriageThreadFacts = {
   author: "coderabbitai",
   authorIsBot: true,
   lastAuthor: "coderabbitai",
+  lastAuthorIsBot: true,
 };
 const resolved = (thread: TriageThreadFacts): TriageThreadFacts => ({
   ...thread,
@@ -90,7 +92,10 @@ describe("status (audit-prs classify without Jev)", () => {
   it.each([
     ["resolved", resolved(botThread)],
     ["outdated", { ...botThread, isOutdated: true }],
-    ["answered", { ...botThread, lastAuthor: VIEWER, awaitingAuthor: false }],
+    [
+      "answered",
+      { ...botThread, lastAuthor: VIEWER, lastAuthorIsBot: false, awaitingAuthor: false },
+    ],
   ])("keeps a bot thread that is %s out of the merge decision", (_kind, thread) => {
     expect(classify({ review: "approved", threads: [thread] })).toMatchObject({
       nextAction: "Comment /trunk merge",
@@ -295,8 +300,13 @@ describe("signals", () => {
     expect(classify({ mergeable: "CONFLICTING" }).signals).toEqual(["Conflicts with master"]);
   });
 
-  it("counts unresolved threads that await the author's reply by author kind", () => {
-    const threads = [humanThread, botThread, botThread, resolved(humanThread)];
+  it("counts unresolved threads that await the author's reply by author kind, outdated included", () => {
+    const threads = [
+      humanThread,
+      { ...botThread, isOutdated: true },
+      botThread,
+      resolved(humanThread),
+    ];
     expect(classify({ threads }).signals).toEqual([
       "1 human thread awaiting the author's reply",
       "2 bot threads awaiting the author's reply",
@@ -397,6 +407,13 @@ describe("group and next action (Postpile own-PR overlay)", () => {
   it("G4: names who the viewer owes an answer, not who opened the thread", () => {
     const viewerOpened = { ...humanThread, author: VIEWER };
     expect(classify({ threads: [viewerOpened] }).nextAction).toBe("Answer 1 thread from alice");
+  });
+
+  it("G4: names the reviewer, not a bot that replied last in their thread", () => {
+    const botReplied = { ...humanThread, lastAuthor: "coderabbitai", lastAuthorIsBot: true };
+    expect(classify({ threads: [botReplied, humanThread] }).nextAction).toBe(
+      "Answer 2 threads from alice",
+    );
   });
 
   it("G4: keeps a hard blocker as the move on a change request", () => {
@@ -516,6 +533,8 @@ describe("counts", () => {
         { ...humanThread, lastAuthor: VIEWER, awaitingAuthor: false },
         resolved(humanThread),
         botThread,
+        { ...botThread, isOutdated: true },
+        { ...botThread, lastAuthor: VIEWER, lastAuthorIsBot: false, awaitingAuthor: false },
         resolved(botThread),
         resolved(botThread),
       ],
@@ -523,7 +542,7 @@ describe("counts", () => {
     });
     expect(result.counts).toEqual({
       humanThreadsAwaiting: 2,
-      botFindingsOpen: 1,
+      botFindingsOpen: 3,
       botFindingsResolved: 2,
       threadsTruncated: true,
     });
