@@ -2372,7 +2372,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly name: string;
     readonly launchArgs?: string;
     readonly environment?: NodeJS.ProcessEnv;
-    readonly source?: "user settings" | "api key";
+    readonly relativeConfig?: boolean;
+    readonly source?: "user settings" | "project settings" | "api key";
     readonly settingsProfile?: boolean;
     readonly settingsHome?: boolean;
     readonly retryAfter?: string | null;
@@ -2386,6 +2387,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly expectedReset: string | null;
     readonly expectedProbe: boolean;
   }> = [
+    {
+      name: "project settings proxy credentials",
+      source: "project settings",
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
+    {
+      name: "relative Claude config directory",
+      source: "user settings",
+      relativeConfig: true,
+      expectedReset: "1970-01-01T00:02:00.000Z",
+      expectedProbe: true,
+    },
     {
       name: "Unix socket proxy transport",
       environment: { ANTHROPIC_UNIX_SOCKET: "/fixture-api.sock" },
@@ -2555,16 +2569,26 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
       );
       const fs = yield* FileSystem.FileSystem;
-      const configDir = yield* fs.makeTempDirectoryScoped();
+      const root = yield* fs.makeTempDirectoryScoped();
+      const cwd = `${root}/workspace`;
+      const configDir = scenario.relativeConfig ? `${cwd}/.proxy-config` : root;
+      yield* fs.makeDirectory(cwd, { recursive: true });
+      yield* fs.makeDirectory(configDir, { recursive: true });
       const proxyEnvironment = {
         ANTHROPIC_BASE_URL: HttpServer.formatAddress(server.address),
         ...(scenario.source === "api key"
           ? { ANTHROPIC_API_KEY: "synthetic-key" }
           : { ANTHROPIC_AUTH_TOKEN: "synthetic-token" }),
       };
-      if (scenario.source === "user settings" || scenario.conflictingSettings) {
+      if (
+        scenario.source === "user settings" ||
+        scenario.source === "project settings" ||
+        scenario.conflictingSettings
+      ) {
+        const settingsDir = scenario.source === "project settings" ? `${cwd}/.claude` : configDir;
+        yield* fs.makeDirectory(settingsDir, { recursive: true });
         yield* fs.writeFileString(
-          `${configDir}/settings.json`,
+          `${settingsDir}/settings.json`,
           encodeJson({
             env: {
               ...proxyEnvironment,
@@ -2591,9 +2615,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const harness = yield* makeWakeHarnessWithOptions({
         ...(scenario.launchArgs === undefined ? {} : { launchArgs: scenario.launchArgs }),
         environment: {
-          CLAUDE_CONFIG_DIR: configDir,
+          CLAUDE_CONFIG_DIR: scenario.relativeConfig ? ".proxy-config" : configDir,
           XDG_CONFIG_HOME: configDir,
-          ...(scenario.source !== "user settings" ? proxyEnvironment : {}),
+          ...(scenario.source === "user settings" || scenario.source === "project settings"
+            ? {}
+            : proxyEnvironment),
           ...scenario.environment,
         },
       });
@@ -2603,6 +2629,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           providerThread: harness.providerThread,
           now: yield* DateTime.now,
           attemptId: RunAttemptId.make("attempt-proxy-reset"),
+          runtimePolicy: { ...CLAUDE_TEST_RUNTIME_POLICY, cwd },
           text: "Continue.",
           attachments: [],
         }),

@@ -41,7 +41,11 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
   if (input.cwd === null) return null;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configDir = yield* resolveClaudeHomePath(input.settings, input.environment);
+  const inheritedConfigDir = input.environment.CLAUDE_CONFIG_DIR?.trim();
+  const configDir =
+    !input.settings.homePath.trim() && inheritedConfigDir
+      ? path.resolve(input.cwd, inheritedConfigDir)
+      : yield* resolveClaudeHomePath(input.settings, input.environment);
   const environment = { ...input.environment };
   const profileDir =
     environment.ANTHROPIC_CONFIG_DIR ??
@@ -101,7 +105,7 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
           .sort()
           .map((name) => path.join(fragmentsDir, name))
       : [];
-  for (const [index, settingsPath] of [...paths, ...fragments].entries()) {
+  for (const settingsPath of [...paths, ...fragments]) {
     if (!(yield* fileSystem.exists(settingsPath))) continue;
     const settings = yield* fileSystem.readFileString(settingsPath).pipe(
       Effect.flatMap(decodeSettings),
@@ -124,7 +128,6 @@ const resolveProxyEnvironment = Effect.fnUntraced(function* (input: {
       )
         continue;
       if (environment[key] !== undefined && environment[key] !== value) return null;
-      if (index > 0 && environment[key] !== value) return null;
       environment[key] = value;
     }
   }
