@@ -4,6 +4,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { linkedThreadsByPullRequest, type LinkedThreadShell } from "./linkedThreads.logic";
 
 const key = { host: "github.com", repository: "acme/app", number: 42 };
+const supported = new Map([
+  [EnvironmentId.make("mac"), { threadPullRequests: true, threadPullRequestBranchUnlink: true }],
+  [EnvironmentId.make("devbox"), { threadPullRequests: true, threadPullRequestBranchUnlink: true }],
+]);
 const otherKey = { ...key, number: 7 };
 
 function link(source: ThreadPullRequestLink["source"] = "manual"): ThreadPullRequestLink {
@@ -52,9 +56,10 @@ describe("linkedThreadsByPullRequest", () => {
     const result = linkedThreadsByPullRequest(
       [older, newer, branchOnly, dismissed],
       [key, otherKey],
+      supported,
     );
 
-    expect(result.get("github.com/acme/app#42")).toEqual([
+    expect(result.threadsByPullRequest.get("github.com/acme/app#42")).toEqual([
       {
         environmentId: EnvironmentId.make("devbox"),
         threadId: ThreadId.make("work"),
@@ -74,7 +79,7 @@ describe("linkedThreadsByPullRequest", () => {
         archivedAt: null,
       },
     ]);
-    expect(result.get("github.com/acme/app#7")).toEqual([]);
+    expect(result.threadsByPullRequest.get("github.com/acme/app#7")).toEqual([]);
   });
   it("does not restore a dismissed link through the matching branch fallback", () => {
     const dismissed = {
@@ -87,9 +92,70 @@ describe("linkedThreadsByPullRequest", () => {
         url: link().url,
       },
     };
-    expect(linkedThreadsByPullRequest([dismissed], [key]).get("github.com/acme/app#42")).toEqual(
-      [],
+    expect(
+      linkedThreadsByPullRequest([dismissed], [key], supported).threadsByPullRequest.get(
+        "github.com/acme/app#42",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([{ threadPullRequestLinking: true }, { threadPullRequests: true }])(
+    "keeps manual links usable and reports unmanageable branch links on %j",
+    (capabilities) => {
+      const manual = shell("legacy", "manual", "2026-10-01T10:00:00.000Z");
+      const branch = {
+        projectId: ProjectId.make("app"),
+        repository: key.repository,
+        number: otherKey.number,
+        url: "https://github.com/acme/app/pull/7",
+      };
+      const branchOnly = {
+        ...manual,
+        id: ThreadId.make("branch"),
+        pullRequests: [],
+        branchPullRequest: branch,
+      };
+      const manualWithOtherBranch = { ...manual, branchPullRequest: branch };
+      const result = linkedThreadsByPullRequest(
+        [manualWithOtherBranch, branchOnly],
+        [key, otherKey],
+        new Map([[manual.environmentId, capabilities]]),
+      );
+      expect(
+        result.threadsByPullRequest.get("github.com/acme/app#42")?.map((thread) => thread.threadId),
+      ).toEqual(["manual"]);
+      expect(result.threadsByPullRequest.get("github.com/acme/app#7")).toEqual([]);
+      expect(result.upgradeEnvironmentsByPullRequest.get("github.com/acme/app#7")).toEqual([
+        manual.environmentId,
+      ]);
+      expect(result.upgradeEnvironmentsByPullRequest.get("github.com/acme/app#42")).toBeUndefined();
+    },
+  );
+
+  it("does not request an upgrade for true dismissed branches or explicitly linked branch PRs", () => {
+    const manual = {
+      ...shell("legacy", "manual", "2026-10-01T10:00:00.000Z"),
+      branchPullRequest: {
+        projectId: ProjectId.make("app"),
+        repository: key.repository,
+        number: key.number,
+        url: link().url,
+      },
+    };
+    const dismissed = {
+      ...manual,
+      id: ThreadId.make("dismissed"),
+      pullRequests: [link("stack-dismissed")],
+    };
+    const result = linkedThreadsByPullRequest(
+      [manual, dismissed],
+      [key],
+      new Map([[manual.environmentId, { threadPullRequests: true }]]),
     );
+    expect(
+      result.threadsByPullRequest.get("github.com/acme/app#42")?.map((thread) => thread.threadId),
+    ).toEqual(["manual"]);
+    expect(result.upgradeEnvironmentsByPullRequest.size).toBe(0);
   });
 
   it("keeps archived shell links, limits the index to requested PR identities and separates hosts", () => {
@@ -110,8 +176,9 @@ describe("linkedThreadsByPullRequest", () => {
     const result = linkedThreadsByPullRequest(
       [archived, otherHost],
       [{ ...key, repository: "Acme/App" }],
+      supported,
     );
-    expect([...result.entries()]).toEqual([
+    expect([...result.threadsByPullRequest.entries()]).toEqual([
       [
         "github.com/acme/app#42",
         [

@@ -16,6 +16,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { toastManager } from "~/components/ui/toast";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { useConnectedEnvironmentIds, useEnvironment } from "~/state/environments";
+import { environmentServerConfigsAtom } from "~/state/server";
 import { environmentThreadShells } from "~/state/threads";
 import { buildThreadRouteParams } from "~/threadRoutes";
 
@@ -29,7 +30,12 @@ const linkedThreadsAtom = Atom.make((get) => {
       ? []
       : [legacyThreadPullRequestKey(shell.branchPullRequest)]),
   ]);
-  return linkedThreadsByPullRequest(shells, keys);
+  const configs = get(environmentServerConfigsAtom);
+  return linkedThreadsByPullRequest(
+    shells,
+    keys,
+    new Map([...configs].map(([id, config]) => [id, config.environment.capabilities])),
+  );
 });
 
 function LinkedThreadChip({
@@ -104,10 +110,7 @@ function LinkedThreadChip({
           <EllipsisIcon aria-hidden />
         </MenuTrigger>
         <MenuPopup>
-          <MenuItem
-            disabled={pending || linking.mode === "unsupported"}
-            onClick={() => void unlink()}
-          >
+          <MenuItem disabled={pending} onClick={() => void unlink()}>
             Unlink
           </MenuItem>
         </MenuPopup>
@@ -117,12 +120,17 @@ function LinkedThreadChip({
 }
 
 export function TriageLinkedThreads({ pullRequest }: { pullRequest: TriagePullRequest }) {
-  const byPullRequest = useAtomValue(linkedThreadsAtom);
+  const index = useAtomValue(linkedThreadsAtom);
   const connectedIds = useConnectedEnvironmentIds();
-  const threads = byPullRequest.get(threadPullRequestKeyOf(pullRequest.key)) ?? [];
-  if (threads.length === 0) return null;
+  const key = threadPullRequestKeyOf(pullRequest.key);
+  const threads = index.threadsByPullRequest.get(key) ?? [];
+  const upgrades = index.upgradeEnvironmentsByPullRequest.get(key) ?? [];
+  if (threads.length === 0 && upgrades.length === 0) return null;
   return (
     <div aria-label="Linked threads" className="flex min-w-0 flex-wrap gap-1 px-2 py-1">
+      {upgrades.map((environmentId) => (
+        <BranchUpgradeNotice key={environmentId} environmentId={environmentId} />
+      ))}
       {threads.map((thread) => (
         <LinkedThreadChip
           key={`${thread.environmentId}:${thread.threadId}`}
@@ -132,5 +140,18 @@ export function TriageLinkedThreads({ pullRequest }: { pullRequest: TriagePullRe
         />
       ))}
     </div>
+  );
+}
+
+function BranchUpgradeNotice({
+  environmentId,
+}: {
+  environmentId: TriageLinkedThread["environmentId"];
+}) {
+  const environment = useEnvironment(environmentId);
+  return (
+    <span className="text-xs text-muted-foreground">
+      Upgrade {environment?.label ?? environmentId} to manage branch-linked threads.
+    </span>
   );
 }

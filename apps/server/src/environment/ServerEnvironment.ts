@@ -240,6 +240,7 @@ export const make = Effect.gen(function* () {
       threadTitleRegeneration: true,
       threadVisitedTracking: true,
       threadPullRequests: true,
+      threadPullRequestBranchUnlink: true,
       threadPullRequestWatch: true,
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
