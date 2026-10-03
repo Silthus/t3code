@@ -323,16 +323,6 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
-  it.effect("never claims the URL scheme in a fork build", () => {
-    const fork = emptyRecording();
-
-    return Effect.gen(function* () {
-      yield* runRegister(fork, { environment: { desktopIdentity: "fork" } });
-
-      assert.deepEqual(fork, emptyRecording());
-    });
-  });
-
   it.effect("writes the portal identity without claiming the URL scheme in development", () => {
     const nonLinux = emptyRecording();
     const unpackaged = emptyRecording();

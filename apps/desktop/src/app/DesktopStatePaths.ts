@@ -1,10 +1,6 @@
 import * as Option from "effect/Option";
 
-import {
-  buildDesktopIdentity,
-  resolveDefaultT3HomeDirName,
-  type DesktopIdentity,
-} from "../fork/forkDesktopIdentity.ts";
+import { resolveDefaultT3HomeDirName, type DesktopIdentity } from "../fork/forkDesktopIdentity.ts";
 
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
@@ -20,13 +16,10 @@ export function resolveDesktopBaseDir(input: {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
-  readonly desktopIdentity?: DesktopIdentity;
+  readonly desktopIdentity: DesktopIdentity;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
-    input.joinPath(
-      input.homeDirectory,
-      resolveDefaultT3HomeDirName(input.desktopIdentity ?? buildDesktopIdentity),
-    ),
+    input.joinPath(input.homeDirectory, resolveDefaultT3HomeDirName(input.desktopIdentity)),
   );
 }
 

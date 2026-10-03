@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import { forkDesktopIdentityDefine } from "./src/fork/forkDesktopIdentity.ts";
 
 const repoEnv = loadRepoEnv();
 
@@ -18,7 +19,7 @@ const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
-  __T3CODE_BUILD_DESKTOP_IDENTITY__: JSON.stringify(repoEnv.T3CODE_DESKTOP_IDENTITY?.trim() ?? ""),
+  ...forkDesktopIdentityDefine(process.env),
 };
 
 export default defineConfig({

@@ -22,11 +22,19 @@ export const buildDesktopIdentity: DesktopIdentity = resolveDesktopIdentity(
     : __T3CODE_BUILD_DESKTOP_IDENTITY__,
 );
 
+export function forkDesktopIdentityDefine(env: Readonly<Record<string, string | undefined>>) {
+  return {
+    __T3CODE_BUILD_DESKTOP_IDENTITY__: JSON.stringify(
+      resolveDesktopIdentity(env.T3CODE_DESKTOP_IDENTITY),
+    ),
+  };
+}
+
 export function resolveRuntimeDesktopIdentity(input: {
-  readonly buildIdentity: DesktopIdentity;
   readonly isDevelopment: boolean;
+  readonly buildIdentity?: DesktopIdentity | undefined;
 }): DesktopIdentity {
-  return input.isDevelopment ? "upstream" : input.buildIdentity;
+  return input.isDevelopment ? "upstream" : (input.buildIdentity ?? buildDesktopIdentity);
 }
 
 export function resolveDefaultT3HomeDirName(identity: DesktopIdentity): string {

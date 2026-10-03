@@ -57,7 +57,7 @@ it.layer(NodeServices.layer)("desktop build identity", (it) => {
     Effect.gen(function* () {
       const mac = yield* buildConfigFor("mac", "zip", { T3CODE_DESKTOP_IDENTITY: "fork" });
 
-      assert.notProperty(mac, "publish");
+      assert.strictEqual(mac.publish, null);
     }),
   );
 

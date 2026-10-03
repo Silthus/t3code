@@ -30,15 +30,15 @@ export const applyDesktopIdentityToBuildConfig = Effect.fn("applyDesktopIdentity
     if ((yield* DesktopIdentityConfig) !== "fork") {
       return buildConfig;
     }
-    const { publish: _publish, ...rest } = buildConfig;
     return {
-      ...rest,
+      ...buildConfig,
+      publish: null,
       appId: FORK_DESKTOP_IDENTITY.appId,
       productName: FORK_DESKTOP_IDENTITY.productName,
       artifactName: FORK_DESKTOP_IDENTITY.artifactName,
-      ...("mac" in rest ? { mac: withoutUrlSchemes(rest.mac) } : {}),
-      ...("linux" in rest ? { linux: withoutUrlSchemes(rest.linux) } : {}),
-      ...("dmg" in rest ? { dmg: withForkInstallerTitle(rest.dmg, version) } : {}),
+      ...("mac" in buildConfig ? { mac: withoutUrlSchemes(buildConfig.mac) } : {}),
+      ...("linux" in buildConfig ? { linux: withoutUrlSchemes(buildConfig.linux) } : {}),
+      ...("dmg" in buildConfig ? { dmg: withForkInstallerTitle(buildConfig.dmg, version) } : {}),
     };
   },
 );

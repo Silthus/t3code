@@ -220,7 +220,7 @@ export const make = Effect.gen(function* () {
   );
 
   const register = Effect.gen(function* () {
-    if (environment.platform !== "linux" || environment.desktopIdentity === "fork") {
+    if (environment.platform !== "linux") {
       return;
     }
     yield* writeDesktopEntry;

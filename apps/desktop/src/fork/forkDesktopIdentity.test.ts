@@ -9,7 +9,8 @@ import * as Path from "effect/Path";
 import * as DesktopAppIdentity from "../app/DesktopAppIdentity.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { resolveDesktopIdentity } from "./forkDesktopIdentity.ts";
+import desktopViteConfig from "../../vite.config.ts";
+import { forkDesktopIdentityDefine, resolveDesktopIdentity } from "./forkDesktopIdentity.ts";
 
 const packagedMacInput = {
   dirname: "/Applications/T3 Code.app/Contents/Resources/app.asar/apps/desktop/dist-electron",
@@ -48,11 +49,27 @@ describe("fork desktop identity", () => {
     assert.equal(resolveDesktopIdentity("Fork"), "upstream");
   });
 
+  it("bakes the identity from the build process environment", () => {
+    assert.deepStrictEqual(forkDesktopIdentityDefine({ T3CODE_DESKTOP_IDENTITY: "fork" }), {
+      __T3CODE_BUILD_DESKTOP_IDENTITY__: '"fork"',
+    });
+    assert.deepStrictEqual(forkDesktopIdentityDefine({}), {
+      __T3CODE_BUILD_DESKTOP_IDENTITY__: '"upstream"',
+    });
+  });
+
+  it("bakes the identity into the main process bundle", () => {
+    const mainEntry = [desktopViteConfig.pack ?? []]
+      .flat()
+      .find((entry) => [entry.entry].flat().includes("src/main.ts"));
+
+    assert.property(mainEntry?.define ?? {}, "__T3CODE_BUILD_DESKTOP_IDENTITY__");
+  });
+
   it.effect("keeps the upstream identity when the build has no identity switch", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment({});
 
-      assert.equal(environment.desktopIdentity, "upstream");
       assert.equal(environment.displayName, "T3 Code (Alpha)");
       assert.equal(environment.branding.displayName, "T3 Code (Alpha)");
       assert.equal(environment.userDataDirName, "t3code");
@@ -67,7 +84,6 @@ describe("fork desktop identity", () => {
     Effect.gen(function* () {
       const environment = yield* makeEnvironment({ desktopIdentity: "fork" });
 
-      assert.equal(environment.desktopIdentity, "fork");
       assert.equal(environment.displayName, "T3 Code (Fork)");
       assert.equal(environment.branding.displayName, "T3 Code (Fork)");
       assert.equal(environment.userDataDirName, "t3code-fork");
@@ -108,7 +124,6 @@ describe("fork desktop identity", () => {
         { VITE_DEV_SERVER_URL: "http://localhost:5173" },
       );
 
-      assert.equal(environment.desktopIdentity, "upstream");
       assert.equal(environment.displayName, "T3 Code (Dev)");
       assert.equal(environment.userDataDirName, "t3code-dev");
       assert.equal(environment.baseDir, "/Users/alice/.t3");

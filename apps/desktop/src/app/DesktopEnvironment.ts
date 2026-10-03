@@ -17,7 +17,6 @@ import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import {
-  buildDesktopIdentity,
   forkDesktopEnvironmentOverrides,
   resolveRuntimeDesktopIdentity,
   type DesktopIdentity,
@@ -46,7 +45,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly processArch: string;
     readonly isPackaged: boolean;
     readonly isDevelopment: boolean;
-    readonly desktopIdentity: DesktopIdentity;
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
@@ -167,8 +165,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
   const desktopIdentity = resolveRuntimeDesktopIdentity({
-    buildIdentity: input.desktopIdentity ?? buildDesktopIdentity,
     isDevelopment,
+    buildIdentity: input.desktopIdentity,
   });
   const appDataDirectory =
     input.platform === "win32"
@@ -216,7 +214,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
-    desktopIdentity,
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,
