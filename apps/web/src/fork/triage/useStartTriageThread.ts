@@ -50,13 +50,11 @@ export function useStartTriageThread(project: EnvironmentProject | null) {
         branch: null,
         worktreePath: null,
         envMode: "local",
-      });
-      if (opened === null) throw new Error("Try again from the project, or open a draft first.");
-      draftId = opened.draftId;
-      useComposerDraftStore.getState().setDraftThreadContext(draftId, {
         environmentSelection: "manual",
         loadBalancedEnvironmentId: null,
       });
+      if (opened === null) throw new Error("Try again from the project, or open a draft first.");
+      draftId = opened.draftId;
       const prepared = await prepareThread.run({
         reference: url,
         mode: "worktree",

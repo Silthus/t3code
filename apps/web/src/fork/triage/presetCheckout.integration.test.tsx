@@ -15,6 +15,7 @@ import { AppAtomRegistryProvider, appAtomRegistry } from "~/rpc/atomRegistry";
 import { gitEnvironment } from "~/state/git";
 import { vcsActionManager, vcsEnvironment } from "~/state/vcs";
 import { useStartTriageThread } from "./useStartTriageThread";
+import { deriveLogicalProjectKey } from "~/logicalProject";
 
 const boundary = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -396,6 +397,64 @@ describe("preset checkout with live Git status", () => {
     }).toEqual({
       draft: replacement,
       prompt: "My new task",
+    });
+    expect(boundary.toastUpdate.mock.lastCall?.[1].type).toBe("error");
+  });
+  it.each(["fresh", "reused"])(
+    "pins a %s draft environment before navigation exposes it to automatic routing",
+    async (kind) => {
+      if (kind === "reused") {
+        useComposerDraftStore
+          .getState()
+          .setLogicalProjectDraftThreadId(
+            deriveLogicalProjectKey(project),
+            { environmentId, projectId },
+            DraftId.make("empty-draft"),
+            { environmentSelection: "auto", loadBalancedEnvironmentId: environmentId },
+          );
+      }
+      let pending: Promise<void>;
+      await act(async () => {
+        pending = start("https://github.com/acme/app/pull/42", "Fix CI");
+        await navigationStarted;
+      });
+      const duringNavigation = useComposerDraftStore.getState().getDraftSession(currentDraftId());
+      await act(async () => {
+        finishNavigation();
+        await checkoutStarted;
+        finishCheckout(prepared);
+        await pending;
+      });
+      expect(duringNavigation).toMatchObject({
+        environmentId,
+        projectId,
+        environmentSelection: "manual",
+        loadBalancedEnvironmentId: null,
+      });
+      expect(boundary.toastUpdate.mock.lastCall?.[1].type).toBe("success");
+    },
+  );
+
+  it("keeps automatic routing explicitly selected by the user during navigation", async () => {
+    let pending: Promise<void>;
+    await act(async () => {
+      pending = start("https://github.com/acme/app/pull/42", "Fix CI");
+      await navigationStarted;
+    });
+    act(() =>
+      useComposerDraftStore.getState().setDraftThreadContext(currentDraftId(), {
+        environmentSelection: "auto",
+        loadBalancedEnvironmentId: null,
+      }),
+    );
+    boundary.checkout.mockImplementationOnce(async () => prepared);
+    await act(async () => {
+      finishNavigation();
+      await pending;
+    });
+    expect(useComposerDraftStore.getState().getDraftSession(currentDraftId())).toMatchObject({
+      environmentSelection: "auto",
+      worktreePath: null,
     });
     expect(boundary.toastUpdate.mock.lastCall?.[1].type).toBe("error");
   });
