@@ -19,6 +19,7 @@ import { useConnectedEnvironmentIds } from "~/state/environments";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { pickProjectForPullRequest, type PullRequestPanelTarget } from "./projectMatch.logic";
+import { TriageLinkedThreads } from "./TriageLinkedThreads";
 import { TriageActions } from "./TriageActions";
 import { CiSignal, plural, RefinementLadder, refinementLabel, StatusBadge } from "./TriageRow";
 
@@ -198,6 +199,7 @@ function TriageHeader({
       </div>
       <p className="text-sm font-semibold">{pullRequest.nextAction}</p>
       <TriageActions pullRequest={pullRequest}>{actionsSlot}</TriageActions>
+      <TriageLinkedThreads pullRequest={pullRequest} />
       {headerSlot}
       <DetailList title="Blockers" items={pullRequest.blockers} />
       <DetailList

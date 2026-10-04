@@ -55,7 +55,7 @@ function EnabledPullRequestThreadLinks({
   const linking = usePullRequestLinking(environmentId);
   const linkedHere = linking.isLinked(thread, url);
   const relations = useEnvironmentQuery(
-    linking.mode === "multiple" && display !== "menu-item"
+    linking.mode === "multiple" && display === "count"
       ? pullRequestEnvironment.linkedThreads({
           environmentId,
           input:
@@ -88,7 +88,7 @@ function EnabledPullRequestThreadLinks({
     } finally {
       setPending(false);
     }
-    if (linking.mode === "multiple") {
+    if (linking.mode === "multiple" && display === "count") {
       appAtomRegistry.refresh(
         pullRequestEnvironment.linkedThreads({
           environmentId,

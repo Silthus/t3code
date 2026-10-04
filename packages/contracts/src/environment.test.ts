@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { ExecutionEnvironmentCapabilities, ExecutionEnvironmentDescriptor } from "./environment.ts";
 
 const decodeDescriptor = Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor);
 
@@ -14,6 +14,46 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
+  it("requires a separate advertisement for unlinking branch-derived pull requests", () => {
+    const multiLinkDescriptor = {
+      ...descriptor,
+      capabilities: { ...descriptor.capabilities, threadPullRequests: true },
+    };
+
+    expect(
+      decodeDescriptor(multiLinkDescriptor).capabilities.threadPullRequestBranchUnlink,
+    ).toBeUndefined();
+    expect(
+      decodeDescriptor({
+        ...multiLinkDescriptor,
+        capabilities: {
+          ...multiLinkDescriptor.capabilities,
+          threadPullRequestBranchUnlink: true,
+        },
+      }).capabilities.threadPullRequestBranchUnlink,
+    ).toBe(true);
+  });
+
+  it("lets older clients decode descriptors advertising branch-derived unlink support", () => {
+    const { threadPullRequestBranchUnlink: _branchUnlink, ...legacyFields } =
+      ExecutionEnvironmentCapabilities.fields;
+    const legacyDescriptor = Schema.Struct({
+      ...ExecutionEnvironmentDescriptor.fields,
+      capabilities: Schema.Struct(legacyFields),
+    });
+
+    expect(
+      Schema.decodeUnknownSync(legacyDescriptor)({
+        ...descriptor,
+        capabilities: {
+          ...descriptor.capabilities,
+          threadPullRequests: true,
+          threadPullRequestBranchUnlink: true,
+        },
+      }).capabilities,
+    ).toEqual({ repositoryIdentity: true, threadPullRequests: true });
+  });
+
   it("requires an advertised required-worktree bootstrap capability", () => {
     expect(decodeDescriptor(descriptor).capabilities.requiredWorktreeBootstrap).toBeUndefined();
     expect(

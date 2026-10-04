@@ -259,6 +259,111 @@ describe("ThreadPullRequestServiceV2 reads", () => {
     ),
   );
 
+  it.effect("does not rewrite a dismissed branch link during discovery", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const activation = yield* Deferred.make<void>();
+        const readStarted = yield* Deferred.make<void>();
+        const dispatched: string[] = [];
+        const identity = {
+          canonicalKey: "github.com/acme/app",
+          provider: "github" as const,
+          owner: "acme",
+          name: "app",
+          locator: {
+            source: "git-remote" as const,
+            remoteName: "origin",
+            remoteUrl: "git@github.com:acme/app.git",
+          },
+        };
+        const project: OrchestrationProjectShell = {
+          id: ProjectId.make("project-1"),
+          title: "App",
+          workspaceRoot: "/workspace/app",
+          repositoryIdentity: identity,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: "2026-10-01T00:00:00.000Z",
+        };
+        const thread = {
+          ...threadShell("dismissed-branch"),
+          branch: "feature/unlink",
+          branchPullRequest: null,
+          pullRequests: [
+            {
+              host: "github.com",
+              repository: "acme/app",
+              number: 42,
+              url: "https://github.com/acme/app/pull/42",
+              source: "stack-dismissed" as const,
+              linkedAt: "2026-10-01T00:00:00.000Z",
+              snapshot: null,
+              stack: null,
+            },
+          ],
+        };
+        const dependencies = Layer.mergeAll(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            streamDomainEvents: Stream.never,
+            getShellSnapshot: () =>
+              Deferred.succeed(readStarted, undefined).pipe(
+                Effect.as({
+                  schemaVersion: 2,
+                  snapshotSequence: 1,
+                  threads: [thread],
+                  archivedThreads: [],
+                }),
+              ),
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command.type);
+                return { sequence: 1, storedEvents: [] };
+              }),
+          }),
+          Layer.mock(ProjectStore.ProjectStoreV2)({
+            listShells: () => Effect.succeed([project]),
+            getShell: () => Effect.succeed(Option.some(project)),
+          }),
+          Layer.mock(GitManager.GitManager)({
+            branchPullRequest: () =>
+              Effect.succeed({
+                number: 42,
+                title: "App",
+                url: "https://github.com/acme/app/pull/42",
+                state: "open",
+                baseRef: "main",
+                headRef: "feature/unlink",
+                repositoryKey: "github.com/acme/app",
+                updatedAt: null,
+              }),
+          }),
+          Layer.mock(PullRequestService.PullRequestService)({}),
+          Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+            resolve: () => Effect.succeed(identity),
+          }),
+          Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
+          Layer.succeed(
+            Crypto.Crypto,
+            Crypto.make({
+              randomBytes: (size) => new Uint8Array(size).fill(1),
+              digest: (_algorithm, data) => Effect.succeed(data),
+            }),
+          ),
+          FileSystem.layerNoop({}),
+        );
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadPullRequestService.make;
+          yield* service.start();
+          yield* Deferred.succeed(activation, undefined);
+          yield* Deferred.await(readStarted);
+          yield* service.drain;
+          expect(dispatched).toEqual([]);
+        }).pipe(Effect.provide(dependencies));
+      }),
+    ),
+  );
+
   it.effect("periodic sweeps read only unsettled threads once backfill is done", () =>
     Effect.scoped(
       Effect.gen(function* () {

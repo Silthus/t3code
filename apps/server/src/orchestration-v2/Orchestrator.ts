@@ -2882,26 +2882,34 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               link,
             ];
           } else if (command.type === "thread.pull-request.unlink") {
-            if (!existing) return thread;
+            const branch = thread.branchPullRequest;
+            const belongsToBranch =
+              branch != null && threadPullRequestKeysEqual(legacyThreadPullRequestKey(branch), key);
+            if (!existing && !belongsToBranch) return thread;
+            const unlinked =
+              existing ?? (branch ? legacyPullRequestLink(thread, branch, now) : undefined);
+            if (unlinked === undefined) return thread;
             const belongsToStack =
-              existing.source === "stack" ||
-              existing.stack !== null ||
+              unlinked.source === "stack" ||
+              unlinked.source === "stack-dismissed" ||
+              unlinked.stack !== null ||
               links.some(
                 (link) =>
                   link.host.toLowerCase() === key.host &&
                   link.repository.toLowerCase() === key.repository &&
                   link.stack?.layers.some((layer) => layer.number === key.number),
               );
-            pullRequests = belongsToStack
-              ? links.map((link) =>
-                  link === existing
-                    ? {
-                        ...withPullRequestWatch(link, undefined),
-                        source: "stack-dismissed" as const,
-                      }
-                    : link,
-                )
-              : links.filter((link) => link !== existing);
+            if (belongsToStack || belongsToBranch) {
+              const dismissed = {
+                ...withPullRequestWatch(unlinked, undefined),
+                source: "stack-dismissed" as const,
+              };
+              pullRequests = existing
+                ? links.map((link) => (link === existing ? dismissed : link))
+                : [...links, dismissed];
+            } else {
+              pullRequests = links.filter((link) => link !== existing);
+            }
           } else {
             if (!existing) return thread;
             pullRequests = links.map((link) =>
@@ -2913,6 +2921,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return {
             ...thread,
             pullRequests,
+            branchPullRequest:
+              command.type === "thread.pull-request.unlink" &&
+              thread.branchPullRequest != null &&
+              threadPullRequestKeysEqual(legacyThreadPullRequestKey(thread.branchPullRequest), key)
+                ? null
+                : thread.branchPullRequest,
             linkedPullRequest:
               thread.linkedPullRequest &&
               pullRequests.some(
@@ -2986,7 +3000,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.pull-request.sync":
           return {
             ...thread,
-            branchPullRequest: command.branchPullRequest,
+            branchPullRequest:
+              command.branchPullRequest !== null &&
+              threadPullRequestsOf(thread).some(
+                (link) =>
+                  link.source === "stack-dismissed" &&
+                  threadPullRequestKeysEqual(
+                    link,
+                    legacyThreadPullRequestKey(command.branchPullRequest!),
+                  ),
+              )
+                ? null
+                : command.branchPullRequest,
             ...(command.linkedPullRequest === undefined
               ? {}
               : {

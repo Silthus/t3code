@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { readLocalApi } from "~/localApi";
 
+import { TriageLinkThreadAction } from "./TriageLinkThreadAction";
 import { TriageNewThreadMenu } from "./TriageNewThreadMenu";
 
 export function TriageActions({
@@ -28,6 +29,7 @@ export function TriageActions({
         <ArrowUpRightIcon aria-hidden />
         Open on GitHub
       </Button>
+      <TriageLinkThreadAction pullRequest={pullRequest} />
       <TriageNewThreadMenu pullRequest={pullRequest} />
       {children}
     </div>

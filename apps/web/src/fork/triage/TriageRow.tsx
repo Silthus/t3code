@@ -21,6 +21,7 @@ import { Badge } from "~/components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
+import { TriageLinkedThreads } from "./TriageLinkedThreads";
 import { TriageRiskRow } from "./TriageRisk";
 
 type BadgeVariant = "error" | "warning" | "success" | "info" | "outline";
@@ -185,40 +186,43 @@ export function TriageRow({
 }) {
   const { repository, number } = pullRequest.key;
   return (
-    <li className="flex items-center gap-2">
-      <button
-        type="button"
-        data-triage-row={rowId(pullRequest)}
-        aria-current={selected ? "true" : undefined}
-        onClick={() => onSelect(pullRequest)}
-        className={cn(
-          "flex w-full cursor-pointer flex-col gap-1 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          selected ? "bg-accent" : "hover:bg-accent/60",
-        )}
-      >
-        <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <Tooltip>
-            <TooltipTrigger render={<span className="min-w-0 truncate text-sm" />}>
-              {pullRequest.title}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{pullRequest.title}</TooltipPopup>
-          </Tooltip>
-          <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
-            {repository}#{number}
+    <li className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          data-triage-row={rowId(pullRequest)}
+          aria-current={selected ? "true" : undefined}
+          onClick={() => onSelect(pullRequest)}
+          className={cn(
+            "flex w-full cursor-pointer flex-col gap-1 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            selected ? "bg-accent" : "hover:bg-accent/60",
+          )}
+        >
+          <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <Tooltip>
+              <TooltipTrigger render={<span className="min-w-0 truncate text-sm" />}>
+                {pullRequest.title}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{pullRequest.title}</TooltipPopup>
+            </Tooltip>
+            <span className="min-w-0 shrink-[2] truncate font-mono text-xs text-muted-foreground tabular-nums">
+              {repository}#{number}
+            </span>
+            <span className="ms-auto flex shrink-0 items-center gap-2">
+              <StatusBadge status={pullRequest.status} />
+              <RefinementLadder refinement={pullRequest.refinement} />
+            </span>
           </span>
-          <span className="ms-auto flex shrink-0 items-center gap-2">
-            <StatusBadge status={pullRequest.status} />
-            <RefinementLadder refinement={pullRequest.refinement} />
+          <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span className="text-sm font-semibold">{pullRequest.nextAction}</span>
+            <Signals pullRequest={pullRequest} />
           </span>
+        </button>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          <TriageRiskRow pullRequest={pullRequest} />
         </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span className="text-sm font-semibold">{pullRequest.nextAction}</span>
-          <Signals pullRequest={pullRequest} />
-        </span>
-      </button>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        <TriageRiskRow pullRequest={pullRequest} />
-      </span>
+      </div>
+      <TriageLinkedThreads pullRequest={pullRequest} />
     </li>
   );
 }
