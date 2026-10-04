@@ -1,6 +1,6 @@
 import { scopedProjectKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
-import type { TriagePullRequest } from "@t3tools/contracts";
+import { resolveTriageContext, type TriagePullRequest } from "@t3tools/contracts";
 import { ChevronDownIcon } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
+import { useClientSettings } from "~/hooks/useSettings";
 import { useProjects, useServerConfigs } from "~/state/entities";
 import { useConnectedEnvironmentIds, useEnvironments } from "~/state/environments";
 
@@ -44,6 +45,8 @@ const PRESETS = [
 ] as const satisfies ReadonlyArray<readonly [TriageThreadPreset, string]>;
 
 export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRequest }) {
+  const { triagePreferences } = useClientSettings();
+  const context = resolveTriageContext(triagePreferences, pullRequest.key);
   const projects = useProjects();
   const configs = useServerConfigs();
   const connectedIds = useConnectedEnvironmentIds();
@@ -84,7 +87,7 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
   const canStart = targetProject !== null && (preset !== "custom" || instruction.trim().length > 0);
   const openPreset = (choice: TriageThreadPreset) => {
     if (choice !== "custom" && matchedProject !== null) {
-      void start(pullRequest.url, presetPrompt(choice, pullRequest));
+      void start(pullRequest.url, presetPrompt(choice, pullRequest, "", context));
     } else {
       setPreset(choice);
       setSelectedProject(null);
@@ -119,7 +122,7 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
             onSubmit={(event) => {
               event.preventDefault();
               if (preset === null || !canStart || preparing) return;
-              const prompt = presetPrompt(preset, pullRequest, instruction.trim());
+              const prompt = presetPrompt(preset, pullRequest, instruction.trim(), context);
               setPreset(null);
               void start(pullRequest.url, prompt);
             }}

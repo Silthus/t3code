@@ -5,11 +5,12 @@ import {
   createEnvironmentQueryAtomFamily,
   isAtomCommandInterrupted,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, TriageReport, TriageReportInput } from "@t3tools/contracts";
+import type { EnvironmentId, TriageReport } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useEffect, useState } from "react";
 
+import { useClientSettings } from "~/hooks/useSettings";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../../state/environments";
 import { formatEnvironmentQueryError } from "../../state/query";
@@ -34,11 +35,11 @@ export function useAssessTriage() {
 }
 
 export function useReloadTriage(environmentId: EnvironmentId) {
-  return useAtomRefresh(triageReport({ environmentId, input: CACHED_READ }));
+  const { triagePreferences } = useClientSettings();
+  return useAtomRefresh(
+    triageReport({ environmentId, input: { refresh: false, preferences: triagePreferences } }),
+  );
 }
-
-const CACHED_READ: TriageReportInput = { refresh: false };
-const GITHUB_READ: TriageReportInput = { refresh: true };
 
 export function useTriageEnvironmentId(): EnvironmentId | null {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -69,7 +70,11 @@ export interface TriageReportView {
 }
 
 export function useTriageReport(environmentId: EnvironmentId): TriageReportView {
-  const atom = triageReport({ environmentId, input: CACHED_READ });
+  const { triagePreferences } = useClientSettings();
+  const atom = triageReport({
+    environmentId,
+    input: { refresh: false, preferences: triagePreferences },
+  });
   const result = useAtomValue(atom);
   const reload = useAtomRefresh(atom);
   const runGitHubRead = useAtomQueryRunner(triageReport, { refresh: true, reportFailure: false });
@@ -79,7 +84,10 @@ export function useTriageReport(environmentId: EnvironmentId): TriageReportView 
   const refreshFromGitHub = async () => {
     setReadingGitHub(true);
     try {
-      const read = await runGitHubRead({ environmentId, input: GITHUB_READ });
+      const read = await runGitHubRead({
+        environmentId,
+        input: { refresh: true, preferences: triagePreferences },
+      });
       if (read._tag === "Failure") {
         if (!isAtomCommandInterrupted(read)) {
           setRefreshFailure({ message: formatEnvironmentQueryError(read.cause), at: Date.now() });

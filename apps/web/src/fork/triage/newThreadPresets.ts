@@ -1,14 +1,12 @@
-import type { TriagePullRequest } from "@t3tools/contracts";
+import {
+  triageProfileText,
+  type TriageContext,
+  type TriagePullRequest,
+  type TriageThreadPreset,
+} from "@t3tools/contracts";
+export type { TriageThreadPreset } from "@t3tools/contracts";
 
-export type TriageThreadPreset =
-  | "babysit"
-  | "review-comments"
-  | "fix-ci"
-  | "modernize"
-  | "qa-swarm"
-  | "custom";
-
-export function presetPrompt(
+function defaultPresetPrompt(
   preset: TriageThreadPreset,
   { url, ci }: Pick<TriagePullRequest, "url"> & { ci: Pick<TriagePullRequest["ci"], "failing"> },
   customInstruction = "",
@@ -27,4 +25,21 @@ export function presetPrompt(
     case "custom":
       return `${customInstruction}\n\n${url}`;
   }
+}
+
+export function presetPrompt(
+  preset: TriageThreadPreset,
+  pr: Pick<TriagePullRequest, "url"> & { ci: Pick<TriagePullRequest["ci"], "failing"> },
+  customInstruction = "",
+  context: TriageContext = {},
+) {
+  const profile = triageProfileText(context);
+  const action = context.actions?.[preset]?.trim();
+  return [
+    defaultPresetPrompt(preset, pr, customInstruction),
+    profile ? `Authored profile:\n${profile}` : "",
+    action ? `Additional action instructions:\n${action}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

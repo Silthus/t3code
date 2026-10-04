@@ -1,3 +1,4 @@
+import { resolveTriageContext } from "@t3tools/contracts";
 import type {
   TriageAssessInput,
   TriageJudgementState,
@@ -54,7 +55,7 @@ const make = Effect.gen(function* () {
   const inFlight = yield* Ref.make<Deferred.Deferred<TriageReport> | null>(null);
 
   const gate = yield* Semaphore.make(1);
-  const read = (authority: "read" | "operate") =>
+  const read = () =>
     Effect.gen(function* () {
       const result = yield* Effect.result(search());
       const now = yield* Clock.currentTimeMillis;
@@ -65,18 +66,13 @@ const make = Effect.gen(function* () {
             result._tag === "Success"
               ? { report: reportOf(result.success, now), readAt: now }
               : { report: { ...previous.report, error: result.failure.message }, readAt: now };
-          if (result._tag === "Success")
-            yield* judgements.synchronize(next.report.pullRequests, {
-              automatic: authority === "operate",
-              retry: true,
-            });
           yield* Ref.set(snapshot, next);
           return next.report;
         }),
       );
     });
 
-  const sharedRead = (authority: "read" | "operate") =>
+  const sharedRead = () =>
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         const created = yield* Deferred.make<TriageReport>();
@@ -84,7 +80,7 @@ const make = Effect.gen(function* () {
           current === null ? [created, created] : [current, current],
         );
         if (joined === created) {
-          yield* read(authority).pipe(
+          yield* read().pipe(
             Effect.exit,
             Effect.flatMap((exit) => Deferred.done(created, exit)),
             Effect.ensuring(Ref.set(inFlight, null)),
@@ -101,19 +97,20 @@ const make = Effect.gen(function* () {
     const { readAt } = yield* Ref.get(snapshot);
     const now = yield* Clock.currentTimeMillis;
     const fresh = readAt !== null && now - readAt < Duration.toMillis(FRESH_FOR);
-    if (input.refresh || !fresh) yield* sharedRead(authority);
+    if (input.refresh || !fresh) yield* sharedRead();
     return yield* gate.withPermits(1)(
       Effect.gen(function* () {
         const { report: current } = yield* Ref.get(snapshot);
         yield* judgements.synchronize(current.pullRequests, {
           automatic: authority === "operate" && current.error === null,
-          retry: false,
+          retry: (input.refresh || !fresh) && current.error === null,
+          preferences: input.preferences,
         });
         return {
           ...current,
           pullRequests: current.pullRequests.map((pr) => ({
             ...pr,
-            judgement: judgements.state(pr),
+            judgement: judgements.state(pr, resolveTriageContext(input.preferences, pr.key)),
           })),
         };
       }),
@@ -140,12 +137,26 @@ const make = Effect.gen(function* () {
     assess: (key) =>
       gate.withPermits(1)(
         find(key).pipe(
-          Effect.flatMap((pr) => (pr ? judgements.assess(pr) : Effect.succeed(missing))),
+          Effect.flatMap((pr) =>
+            pr
+              ? judgements.assess(
+                  pr,
+                  resolveTriageContext({ global: key.context ?? {}, repositories: {} }, pr.key),
+                )
+              : Effect.succeed(missing),
+          ),
         ),
       ),
     awaitJudgement: (key) =>
       find(key).pipe(
-        Effect.flatMap((pr) => (pr ? judgements.awaitJudgement(pr) : Effect.succeed(missing))),
+        Effect.flatMap((pr) =>
+          pr
+            ? judgements.awaitJudgement(
+                pr,
+                resolveTriageContext({ global: key.context ?? {}, repositories: {} }, pr.key),
+              )
+            : Effect.succeed(missing),
+        ),
       ),
   });
 });

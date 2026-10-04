@@ -1,9 +1,15 @@
-import type { EnvironmentId, TriagePullRequest, TriageRisk } from "@t3tools/contracts";
+import {
+  resolveTriageContext,
+  type EnvironmentId,
+  type TriagePullRequest,
+  type TriageRisk,
+} from "@t3tools/contracts";
 import { useState } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useClientSettings } from "~/hooks/useSettings";
 import { formatEnvironmentQueryError } from "~/state/query";
 
 import { useAssessTriage, useReloadTriage } from "./state";
@@ -34,6 +40,7 @@ function AssessButton({
   environmentId: EnvironmentId;
 }) {
   const { assess } = useAssessTriage();
+  const { triagePreferences } = useClientSettings();
   const reload = useReloadTriage(environmentId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +56,13 @@ function AssessButton({
           setSubmitting(true);
           setError(null);
           try {
-            const result = await assess({ environmentId, input: pullRequest.key });
+            const result = await assess({
+              environmentId,
+              input: {
+                ...pullRequest.key,
+                context: resolveTriageContext(triagePreferences, pullRequest.key),
+              },
+            });
             if (result._tag === "Failure") setError(formatEnvironmentQueryError(result.cause));
             else if (result.value._tag === "failed" || result.value._tag === "unavailable")
               setError(result.value.reason);

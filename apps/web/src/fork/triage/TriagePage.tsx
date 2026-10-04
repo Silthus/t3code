@@ -18,11 +18,16 @@ import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { isElectron } from "~/env";
 import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import {
+  useClientSettingsHydrationStatus,
+  ensureClientSettingsHydrated,
+} from "~/hooks/useSettings";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
+import { TriagePreferencesEditor } from "./TriagePreferencesEditor";
 import { TriageDetailPane } from "./TriageDetailPane";
 import { focusTriageRowSoon, TriageRow } from "./TriageRow";
 import { isSelectedPullRequest, type TriageSearch } from "./selection.logic";
@@ -194,6 +199,7 @@ function TriageHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <GroupCounts groups={groups} />
+      <TriagePreferencesEditor pullRequests={view?.report?.pullRequests ?? NO_PULL_REQUESTS} />
       <span className="ms-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
         {view ? (
           <>
@@ -222,11 +228,13 @@ function TriageLayout({
   selection,
   detail,
   listRef,
+  preferencesReady = true,
 }: {
   view: TriageReportView | null;
   selection: TriageSelection;
   detail: ReactNode;
   listRef?: Ref<HTMLDivElement>;
+  preferencesReady?: boolean;
 }) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
   const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
@@ -248,7 +256,9 @@ function TriageLayout({
                 <TriageBody view={view} groups={groups} selection={selection} />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Connect an environment to see triage.
+                  {preferencesReady
+                    ? "Connect an environment to see triage."
+                    : "Loading triage preferences. If local storage is unavailable, reload to retry."}
                 </p>
               )}
             </WorkspacePageContainer>
@@ -325,7 +335,15 @@ function TriageWithoutEnvironment({ selection }: { selection: TriageSelection })
 
 export function TriagePage() {
   const selection = useTriageSelection();
+  const hydration = useClientSettingsHydrationStatus();
+  useEffect(() => {
+    void ensureClientSettingsHydrated().catch(() => undefined);
+  }, []);
   const environmentId = useTriageEnvironmentId();
+  if (hydration !== "ready")
+    return (
+      <TriageLayout view={null} selection={selection} detail={null} preferencesReady={false} />
+    );
   return environmentId === null ? (
     <TriageWithoutEnvironment selection={selection} />
   ) : (
