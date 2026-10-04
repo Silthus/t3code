@@ -194,7 +194,9 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
                         ? "The selected project is unavailable. Reconnect its environment or choose another project."
                         : availableProjects.length === 0
                           ? "Connect an environment with pull request support and add a project to start a draft."
-                          : "No matching repository was found. Choose a project from a connected environment."}
+                          : matchedProject === null
+                            ? "No matching repository was found. Choose a project from a connected environment."
+                            : "The draft will use your selected project."}
                     </p>
                   </div>
                 ) : (

@@ -193,6 +193,7 @@ it("keeps the explicitly selected project displayed and prepares its draft when 
   state.connectedIds = [selected.environmentId, matching.environmentId];
   await render();
   expect(document.querySelector('[role="combobox"]')?.textContent).toBe("selected-A (Mac)");
+  expect(document.body.textContent).not.toContain("No matching repository was found.");
   await click(
     [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Open draft",
@@ -206,6 +207,33 @@ it("keeps the explicitly selected project displayed and prepares its draft when 
   });
   expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(
     "Check accessibility.\n\nhttps://github.com/acme/app/pull/42",
+  );
+});
+
+it("uses the current automatic match for a preset after cancelling an explicit selection", async () => {
+  await selectCustomProject();
+  state.connectedIds = [selected.environmentId, matching.environmentId];
+  await render();
+  await click(
+    [...document.querySelectorAll("button")].find((button) => button.textContent === "Cancel") ??
+      null,
+  );
+  await click(
+    [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "New thread",
+    ) ?? null,
+  );
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find(
+      (item) => item.textContent === "Babysit",
+    ) ?? null,
+  );
+  expect(useComposerDraftStore.getState().getDraftSession(draftId)).toMatchObject({
+    environmentId: EnvironmentId.make("devbox"),
+    projectId: ProjectId.make("matching-B"),
+  });
+  expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(
+    "/babysit-pr https://github.com/acme/app/pull/42",
   );
 });
 
