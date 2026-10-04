@@ -126,6 +126,7 @@ import {
 } from "./chat/threadDetailsPanelStyles";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useOpenLink } from "~/browser/useOpenLink";
+import { isCheckoutPreparing, useCheckoutPreparing } from "~/fork/triage/checkoutPreparation";
 
 interface GitActionsControlProps {
   presentation?: "toolbar" | "menu";
@@ -1088,6 +1089,7 @@ export default function GitActionsControl({
         ? store.getDraftThreadByRef(activeThreadRef)
         : null,
   );
+  const isPreparingCheckout = useCheckoutPreparing(activeDraftThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
@@ -1132,6 +1134,10 @@ export default function GitActionsControl({
           },
         });
 
+        return;
+      }
+
+      if (!manualSelection && isCheckoutPreparing(activeDraftThread)) {
         return;
       }
 
@@ -1213,7 +1219,12 @@ export default function GitActionsControl({
     activeDraftThread.worktreePath === null;
 
   useEffect(() => {
-    if (isGitActionRunning || isSelectingWorktreeBase || activeServerThread) {
+    if (
+      isGitActionRunning ||
+      isPreparingCheckout ||
+      isSelectingWorktreeBase ||
+      activeServerThread
+    ) {
       return;
     }
 
@@ -1231,6 +1242,7 @@ export default function GitActionsControl({
     activeDraftThread?.branch,
     gitStatusForActions,
     isGitActionRunning,
+    isPreparingCheckout,
     isSelectingWorktreeBase,
     persistThreadBranchSync,
   ]);
