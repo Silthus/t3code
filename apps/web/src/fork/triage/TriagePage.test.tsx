@@ -112,9 +112,19 @@ it("keeps the selected PR URL during a preferences reload and closes only after 
   }
 });
 
-it("shows the local storage failure and offers a retry without requesting a report", async () => {
+it("recovers the triage report after retrying a failed settings read", async () => {
   boundary.hydration = "failed";
-  boundary.hydrate.mockRejectedValueOnce(new Error("Synthetic storage unavailable"));
+  boundary.report = {
+    viewer: "synthetic",
+    fetchedAt: "2026-10-04T00:00:00Z",
+    error: null,
+    pullRequests: [],
+  };
+  boundary.hydrate
+    .mockRejectedValueOnce(new Error("Synthetic storage unavailable"))
+    .mockImplementationOnce(async () => {
+      boundary.hydration = "ready";
+    });
   const rootRoute = createRootRoute({ component: Outlet });
   const chat = createRoute({ getParentRoute: () => rootRoute, id: "_chat", component: Outlet });
   const triage = createRoute({
@@ -140,7 +150,8 @@ it("shows the local storage failure and offers a retry without requesting a repo
     );
     expect(retry).toBeDefined();
     await act(async () => retry!.click());
-    expect(host.textContent).not.toContain("Synthetic storage unavailable");
+    expect(host.textContent).toContain("No open pull requests of yours.");
+    expect(host.textContent).not.toContain("Retry preferences");
   } finally {
     boundary.hydration = "ready";
     await act(async () => root.unmount());
