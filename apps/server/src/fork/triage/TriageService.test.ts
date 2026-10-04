@@ -4,6 +4,13 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
+import * as ServerConfig from "../../config.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -64,13 +71,37 @@ function fakeGitHub(answers: ReadonlyArray<Answer>) {
       ),
   });
   const layer = TriageService.layer.pipe(
-    Layer.provide(Layer.merge(github, GitHubGraphQlBudget.layer)),
+    Layer.provide(
+      Layer.mergeAll(
+        github,
+        GitHubGraphQlBudget.layer,
+        KeyValueStore.layerMemory,
+        ServerConfig.layerTest(process.cwd(), "/isolated").pipe(
+          Layer.provide(
+            Layer.merge(FileSystem.layerNoop({ makeDirectory: () => Effect.void }), Path.layer),
+          ),
+        ),
+        FileSystem.layerNoop({ makeDirectory: () => Effect.void }),
+        Layer.mock(ServerSettings.ServerSettingsService)({
+          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        }),
+        Layer.succeed(
+          TextGeneration.TextGeneration,
+          TextGeneration.TextGeneration.of({
+            generateCommitMessage: () => Effect.die("unused"),
+            generatePrContent: () => Effect.die("unused"),
+            generateBranchName: () => Effect.die("unused"),
+            generateThreadTitle: () => Effect.die("unused"),
+          }),
+        ),
+      ),
+    ),
   );
   return { requests, layer };
 }
 
 const report = (refresh = false) =>
-  TriageService.TriageService.use((triage) => triage.report({ refresh }));
+  TriageService.TriageService.use((triage) => triage.report({ refresh }, "operate"));
 
 const pullRequest = (current: TriageReport, number: number): TriagePullRequest => {
   const found = current.pullRequests.find((candidate) => candidate.key.number === number);
@@ -127,10 +158,15 @@ it.effect("classifies every PR of the recorded search page into the report", () 
     assert.strictEqual(pullRequest(current, 104).refinement, "raw");
 
     for (const pr of current.pullRequests) {
-      assert.deepStrictEqual(pr.judgement, {
-        _tag: "unavailable",
-        reason: "Risk judgement is not built yet",
-      });
+      assert.deepStrictEqual(
+        pr.judgement,
+        pr.isDraft
+          ? { _tag: "not-requested" }
+          : {
+              _tag: "unavailable",
+              reason: "Risk needs Claude or Codex as the text-generation model",
+            },
+      );
     }
 
     const [request] = github.requests;
@@ -178,7 +214,7 @@ it.effect("serves the cached report for two minutes, and re-reads on refresh", (
   return Effect.gen(function* () {
     const first = yield* report();
     yield* TestClock.adjust("1 minute");
-    assert.strictEqual(yield* report(), first);
+    assert.deepStrictEqual(yield* report(), first);
     assert.strictEqual(github.requests.length, 1);
 
     yield* report(true);
@@ -206,8 +242,8 @@ it.effect("shares one in-flight read between concurrent callers", () =>
       const reports = yield* Fiber.joinAll(callers);
 
       assert.strictEqual(github.requests.length, 1);
-      assert.strictEqual(reports[1], reports[0]);
-      assert.strictEqual(reports[2], reports[0]);
+      assert.deepStrictEqual(reports[1], reports[0]);
+      assert.deepStrictEqual(reports[2], reports[0]);
     }).pipe(Effect.provide(github.layer));
   }),
 );

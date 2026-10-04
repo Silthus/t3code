@@ -1,4 +1,9 @@
-import type { TriageReport, TriageReportInput } from "@t3tools/contracts";
+import type {
+  TriageAssessInput,
+  TriageJudgementState,
+  TriageReport,
+  TriageReportInput,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -35,6 +40,10 @@ function isMissingRoute(error: RemoteEnvironmentRequestError): boolean {
 export class TriageLoader extends Context.Service<
   TriageLoader,
   {
+    readonly assess: (
+      prepared: PreparedConnection,
+      input: TriageAssessInput,
+    ) => Effect.Effect<TriageJudgementState, TriageLoadError>;
     readonly report: (
       prepared: PreparedConnection,
       input: TriageReportInput,
@@ -52,6 +61,22 @@ export const triageLoaderLayer: Layer.Layer<TriageLoader, never, HttpClient.Http
         RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
       );
       return TriageLoader.of({
+        assess: (prepared, input) =>
+          executeAuthenticatedEnvironmentHttpRequest({
+            prepared,
+            signer,
+            remoteAuthorization,
+            group: "forkTriage",
+            method: "POST",
+            url: (httpBaseUrl) => makeEnvironmentHttpApiUrlBuilder(httpBaseUrl).forkTriage.assess(),
+            timeoutMs: TRIAGE_REPORT_TIMEOUT_MS,
+            request: ({ client, headers }) => client.assess({ payload: input, headers }),
+          }).pipe(
+            Effect.mapError((error) =>
+              isMissingRoute(error) ? new TriageUnsupportedError() : error,
+            ),
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+          ),
         report: (prepared, input) =>
           executeAuthenticatedEnvironmentHttpRequest({
             prepared,
@@ -86,3 +111,16 @@ export const loadTriageReport = Effect.fn("clientRuntime.fork.loadTriageReport")
   }
   return yield* loader.report(prepared.value, input);
 });
+
+export const assessTriagePullRequest = Effect.fn("clientRuntime.fork.assessTriagePullRequest")(
+  function* (input: TriageAssessInput) {
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const loader = yield* TriageLoader;
+    const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+    if (Option.isNone(prepared))
+      return yield* new EnvironmentHttpConnectionNotReadyError({
+        message: "The environment HTTP connection is not ready.",
+      });
+    return yield* loader.assess(prepared.value, input);
+  },
+);
