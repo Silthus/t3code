@@ -5,7 +5,13 @@ import {
   createEnvironmentQueryAtomFamily,
   isAtomCommandInterrupted,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, TriageReport } from "@t3tools/contracts";
+import {
+  DEFAULT_TRIAGE_PREFERENCES,
+  type EnvironmentId,
+  type TriagePreferences,
+  type TriageReport,
+  type TriageReportInput,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useEffect, useState } from "react";
@@ -17,11 +23,22 @@ import { formatEnvironmentQueryError } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 
-const triageReport = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
-  label: "fork-triage:report",
-  staleTimeMs: 60_000,
-  execute: loadTriageReport,
-});
+const reportFamily = (preferences: TriagePreferences) =>
+  createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
+    label: "fork-triage:report",
+    staleTimeMs: 60_000,
+    execute: (input: { refresh: boolean }) => loadTriageReport({ ...input, preferences }),
+  });
+const reportsByPreferences = new WeakMap<TriagePreferences, ReturnType<typeof reportFamily>>();
+const triageReport = (target: { environmentId: EnvironmentId; input: TriageReportInput }) => {
+  const preferences = target.input.preferences ?? DEFAULT_TRIAGE_PREFERENCES;
+  let family = reportsByPreferences.get(preferences);
+  if (!family) {
+    family = reportFamily(preferences);
+    reportsByPreferences.set(preferences, family);
+  }
+  return family({ environmentId: target.environmentId, input: { refresh: target.input.refresh } });
+};
 
 const triageAssess = createEnvironmentCommand(connectionAtomRuntime, {
   label: "fork-triage:assess",

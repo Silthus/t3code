@@ -228,13 +228,13 @@ function TriageLayout({
   selection,
   detail,
   listRef,
-  preferencesReady = true,
+  preferencesNotice,
 }: {
   view: TriageReportView | null;
   selection: TriageSelection;
   detail: ReactNode;
   listRef?: Ref<HTMLDivElement>;
-  preferencesReady?: boolean;
+  preferencesNotice?: ReactNode;
 }) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
   const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
@@ -255,11 +255,11 @@ function TriageLayout({
               {view ? (
                 <TriageBody view={view} groups={groups} selection={selection} />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  {preferencesReady
-                    ? "Connect an environment to see triage."
-                    : "Loading triage preferences. If local storage is unavailable, reload to retry."}
-                </p>
+                (preferencesNotice ?? (
+                  <p className="text-sm text-muted-foreground">
+                    Connect an environment to see triage.
+                  </p>
+                ))
               )}
             </WorkspacePageContainer>
           </div>
@@ -295,12 +295,13 @@ function TriageEnvironmentPage({
   const previousSelection = useRef(selected);
   const { clear: clearSelection, search } = selection;
   useEffect(() => {
+    if (view.report === null) return;
     if (previousSelection.current && !selected && search.repository) {
       clearSelection();
       listRef.current?.focus({ preventScroll: true });
     }
     previousSelection.current = selected;
-  }, [selected, clearSelection, search.repository]);
+  }, [selected, clearSelection, search.repository, view.report]);
   const closeDetail = () => {
     selection.clear();
     if (selected) focusTriageRowSoon(selected);
@@ -336,13 +337,42 @@ function TriageWithoutEnvironment({ selection }: { selection: TriageSelection })
 export function TriagePage() {
   const selection = useTriageSelection();
   const hydration = useClientSettingsHydrationStatus();
-  useEffect(() => {
-    void ensureClientSettingsHydrated().catch(() => undefined);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const loadPreferences = useCallback(() => {
+    void ensureClientSettingsHydrated().catch((failure) => {
+      setHydrationError(
+        failure instanceof Error ? failure.message : "Could not load local triage preferences.",
+      );
+    });
   }, []);
+  useEffect(loadPreferences, [loadPreferences]);
   const environmentId = useTriageEnvironmentId();
   if (hydration !== "ready")
     return (
-      <TriageLayout view={null} selection={selection} detail={null} preferencesReady={false} />
+      <TriageLayout
+        view={null}
+        selection={selection}
+        detail={null}
+        preferencesNotice={
+          hydration === "failed" ? (
+            <div className="flex flex-col items-start gap-2">
+              <ErrorLine message={hydrationError ?? "Could not load local triage preferences."} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setHydrationError(null);
+                  loadPreferences();
+                }}
+              >
+                Retry preferences
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading triage preferences…</p>
+          )
+        }
+      />
     );
   return environmentId === null ? (
     <TriageWithoutEnvironment selection={selection} />
