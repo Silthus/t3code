@@ -1,4 +1,5 @@
 import { scopedProjectKey } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import type { TriagePullRequest } from "@t3tools/contracts";
 import { ChevronDownIcon } from "lucide-react";
 import { useId, useState } from "react";
@@ -60,22 +61,24 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
         project.environmentId === match?.environmentId && project.id === match.reference.projectId,
     ) ?? null;
   const [preset, setPreset] = useState<TriageThreadPreset | null>(null);
-  const [projectKey, setProjectKey] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<EnvironmentProject | null>(null);
   const [instruction, setInstruction] = useState("");
+  const explicitProject = preset === null ? null : selectedProject;
   const targetProject =
-    matchedProject ??
-    availableProjects.find(
-      (project) =>
-        scopedProjectKey({ environmentId: project.environmentId, projectId: project.id }) ===
-        projectKey,
-    ) ??
-    null;
+    explicitProject === null
+      ? matchedProject
+      : (availableProjects.find(
+          (project) =>
+            project.environmentId === explicitProject.environmentId &&
+            project.id === explicitProject.id,
+        ) ?? null);
   const { start, preparing } = useStartTriageThread(targetProject);
+  const displayedProject = explicitProject ?? targetProject;
   const targetEnvironment = environments.find(
-    (environment) => environment.environmentId === targetProject?.environmentId,
+    (environment) => environment.environmentId === displayedProject?.environmentId,
   );
-  const projectLabel = targetProject
-    ? `${targetProject.title}${targetEnvironment ? ` (${targetEnvironment.label})` : ""}`
+  const projectLabel = displayedProject
+    ? `${displayedProject.title}${targetEnvironment ? ` (${targetEnvironment.label})` : ""}`
     : "Choose a project";
   const fieldId = useId();
   const canStart = targetProject !== null && (preset !== "custom" || instruction.trim().length > 0);
@@ -84,7 +87,7 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
       void start(pullRequest.url, presetPrompt(choice, pullRequest));
     } else {
       setPreset(choice);
-      setProjectKey(null);
+      setSelectedProject(null);
       setInstruction("");
     }
   };
@@ -132,10 +135,29 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
             </DialogHeader>
             <DialogPanel>
               <div className="flex flex-col gap-4">
-                {matchedProject === null ? (
+                {matchedProject === null || explicitProject !== null ? (
                   <div className="flex flex-col gap-2">
                     <Label id={`${fieldId}-project`}>Project</Label>
-                    <Select value={projectKey} onValueChange={setProjectKey}>
+                    <Select
+                      value={
+                        explicitProject
+                          ? scopedProjectKey({
+                              environmentId: explicitProject.environmentId,
+                              projectId: explicitProject.id,
+                            })
+                          : null
+                      }
+                      onValueChange={(key) => {
+                        const project = availableProjects.find(
+                          (candidate) =>
+                            scopedProjectKey({
+                              environmentId: candidate.environmentId,
+                              projectId: candidate.id,
+                            }) === key,
+                        );
+                        if (project) setSelectedProject(project);
+                      }}
+                    >
                       <SelectTrigger aria-labelledby={`${fieldId}-project`}>
                         <SelectValue placeholder="Choose a project">{projectLabel}</SelectValue>
                       </SelectTrigger>
@@ -168,9 +190,11 @@ export function TriageNewThreadMenu({ pullRequest }: { pullRequest: TriagePullRe
                       </SelectPopup>
                     </Select>
                     <p className="text-sm text-muted-foreground">
-                      {availableProjects.length === 0
-                        ? "Connect an environment with pull request support and add a project to start a draft."
-                        : "No matching repository was found. Choose a project from a connected environment."}
+                      {explicitProject !== null && targetProject === null
+                        ? "The selected project is unavailable. Reconnect its environment or choose another project."
+                        : availableProjects.length === 0
+                          ? "Connect an environment with pull request support and add a project to start a draft."
+                          : "No matching repository was found. Choose a project from a connected environment."}
                     </p>
                   </div>
                 ) : (
