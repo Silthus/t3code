@@ -80,6 +80,7 @@ function LinkedThreadChip({
       className="inline-flex min-w-0 max-w-full items-center rounded-md border border-border"
     >
       <Button
+        className="min-w-0 shrink"
         size="micro"
         variant="ghost"
         render={<Link to="/$environmentId/$threadId" params={buildThreadRouteParams(threadRef)} />}
