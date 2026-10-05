@@ -413,7 +413,12 @@ function pendingWork(reading: PullRequestReading) {
       "fix-ci",
       facts.ci.failing.length ? `Fix failing CI: ${facts.ci.failing.join(", ")}` : "Fix failing CI",
     );
-  const reReview = awaitsReReview(reading);
+  if (facts.trunk.failed) add("merge-queue", "Investigate merge queue removal");
+  const reReview =
+    facts.review === "changes-requested" &&
+    humanWaiting.length === 0 &&
+    facts.changeRequesters.length > 0 &&
+    facts.changeRequesters.every(({ login }) => facts.requestedReviewers.includes(login));
   if (humanWaiting.length > 0 || (facts.review === "changes-requested" && !reReview)) {
     add(
       "feedback",

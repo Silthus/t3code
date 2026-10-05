@@ -609,3 +609,26 @@ it("uses active thread facts rather than broad counts and treats requested re-re
 it("reports a queued merge as waiting rather than ready to merge", () => {
   expect(classify({ review: "approved", mergeQueued: true }).status).toBe("waiting-merge");
 });
+
+it("preserves requested team re-review alongside author blockers", () => {
+  expect(
+    classify({
+      review: "changes-requested",
+      changeRequesters: [human("alice")],
+      requestedReviewers: ["alice"],
+      mergeable: "CONFLICTING",
+      ci: ci({ state: "failing", failing: ["unit"] }),
+    }).pendingActions,
+  ).toEqual([
+    { kind: "conflicts", label: "Resolve merge conflicts" },
+    { kind: "fix-ci", label: "Fix failing CI: unit" },
+    { kind: "review", label: "Re-review the PR: alice" },
+  ]);
+});
+it("makes merge queue removal an investigation rather than an empty blocked PR", () => {
+  expect(
+    classify({ review: "approved", trunk: { managed: true, failed: true, message: "Removed" } }),
+  ).toMatchObject({
+    pendingActions: [{ kind: "merge-queue", label: "Investigate merge queue removal" }],
+  });
+});
