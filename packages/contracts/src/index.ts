@@ -61,4 +61,5 @@ export * from "./resourceTelemetry.ts";
 export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./forkTriage.ts";
+export * from "./forkTriageActions.ts";
 export * from "./forkTriageContext.ts";

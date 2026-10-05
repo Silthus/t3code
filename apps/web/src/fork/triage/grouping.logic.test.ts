@@ -1,98 +1,58 @@
 import type { TriagePullRequest } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { groupTriagePullRequests, effectiveTriageActions } from "./grouping.logic";
 
-import { groupTriagePullRequests } from "./grouping.logic";
-
-function pullRequest(
+function pr(
   number: number,
-  overrides: Partial<Pick<TriagePullRequest, "group" | "status" | "updatedAt">>,
-): TriagePullRequest {
+  pendingActions: TriagePullRequest["pendingActions"],
+  overrides: Partial<TriagePullRequest> = {},
+) {
   return {
-    key: { host: "github.com", repository: "acme/app", number },
-    url: `https://github.com/acme/app/pull/${number}`,
-    title: `PR ${number}`,
-    isDraft: false,
-    headSha: "abc123",
-    baseRef: "main",
-    headRef: `branch-${number}`,
-    updatedAt: "2026-10-01T10:00:00.000Z",
-    lastPushAt: "2026-10-01T10:00:00.000Z",
-    additions: 1,
-    deletions: 1,
-    changedFiles: 1,
-    review: "none",
-    ci: { state: "green", failing: [] },
-    mergeable: "MERGEABLE",
-    requestedReviewers: [],
+    key: { host: "GitHub.COM", repository: "Acme/App", number },
+    pendingActions,
     status: "ready-for-review",
-    group: "needs-you",
-    nextAction: "Ask for review",
-    blockers: [],
-    reasons: [],
-    signals: [],
-    openQuestions: [],
-    refinement: "raw",
-    counts: {
-      humanThreadsAwaiting: 0,
-      botFindingsOpen: 0,
-      botFindingsResolved: 0,
-      threadsTruncated: false,
-    },
-    judgement: { _tag: "unavailable", reason: "Risk judgement is not built yet" },
+    updatedAt: "2026-10-05T00:00:00Z",
     ...overrides,
-  };
+  } as TriagePullRequest;
 }
-
-function numbersByGroup(prs: ReadonlyArray<TriagePullRequest>) {
-  return groupTriagePullRequests(prs).map(({ group, pullRequests }) => [
+const review = { kind: "review", label: "Review the PR" } as const;
+const conflict = { kind: "conflicts", label: "Resolve merge conflicts" } as const;
+const groups = (prs: TriagePullRequest[], preferences = { global: {}, repositories: {} }) =>
+  groupTriagePullRequests(prs, preferences).map(({ group, pullRequests }) => [
     group,
     pullRequests.map((pr) => pr.key.number),
   ]);
-}
 
-describe("groupTriagePullRequests", () => {
-  it("lists groups in the order Needs you, Ready to merge, Waiting on others, Drafts", () => {
-    const prs = [
-      pullRequest(1, { group: "drafts", status: "draft" }),
-      pullRequest(2, { group: "waiting-on-others" }),
-      pullRequest(3, { group: "ready-to-merge", status: "ready-to-merge" }),
-      pullRequest(4, { group: "needs-you" }),
-    ];
-
-    expect(numbersByGroup(prs)).toEqual([
-      ["needs-you", [4]],
-      ["ready-to-merge", [3]],
-      ["waiting-on-others", [2]],
-      ["drafts", [1]],
+describe("author queues", () => {
+  it("puts mixed-owner PRs in my queue without hiding the team action", () => {
+    const mixed = pr(1, [conflict, review]);
+    expect(groups([pr(2, [review]), mixed, pr(3, [], { waiting: ["Waiting for CI"] })])).toEqual([
+      ["needs-my-action", [1]],
+      ["needs-team-action", [2, 3]],
     ]);
+    expect(effectiveTriageActions(mixed).map(({ owner }) => owner)).toEqual(["author", "team"]);
   });
-
-  it("hides groups without pull requests", () => {
-    const prs = [
-      pullRequest(1, { group: "drafts", status: "draft" }),
-      pullRequest(2, { group: "needs-you" }),
-    ];
-
-    expect(numbersByGroup(prs)).toEqual([
-      ["needs-you", [2]],
-      ["drafts", [1]],
-    ]);
+  it("uses normalized repository overrides and restores the inherited queue on removal", () => {
+    const preferences = {
+      global: { owners: { review: "team" as const } },
+      repositories: { "github.com/acme/app": { owners: { review: "author" as const } } },
+    };
+    expect(groupTriagePullRequests([pr(1, [review])], preferences)[0]?.group).toBe(
+      "needs-my-action",
+    );
+    expect(
+      groupTriagePullRequests([pr(1, [review])], { ...preferences, repositories: {} })[0]?.group,
+    ).toBe("needs-team-action");
   });
-
-  it("returns no groups when there are no pull requests", () => {
+  it("sorts by urgency, latest update and a stable PR identity", () => {
+    expect(
+      groups([
+        pr(2, [conflict]),
+        pr(1, [conflict]),
+        pr(3, [conflict], { status: "blocked" }),
+        pr(4, [conflict], { updatedAt: "2026-10-06T00:00:00Z" }),
+      ]),
+    ).toEqual([["needs-my-action", [3, 4, 1, 2]]]);
     expect(groupTriagePullRequests([])).toEqual([]);
-  });
-
-  it("sorts a group by status urgency, then by the newest update", () => {
-    const prs = [
-      pullRequest(1, { status: "ready-for-review", updatedAt: "2026-10-03T09:00:00.000Z" }),
-      pullRequest(2, { status: "changes-requested", updatedAt: "2026-10-01T09:00:00.000Z" }),
-      pullRequest(3, { status: "blocked", updatedAt: "2026-09-20T09:00:00.000Z" }),
-      pullRequest(4, { status: "changes-requested", updatedAt: "2026-10-02T09:00:00.000Z" }),
-      pullRequest(5, { status: "waiting-ci", updatedAt: "2026-10-03T12:00:00.000Z" }),
-      pullRequest(6, { status: "waiting-ci-authorization", updatedAt: "2026-09-01T09:00:00.000Z" }),
-    ];
-
-    expect(numbersByGroup(prs)).toEqual([["needs-you", [3, 4, 2, 6, 5, 1]]]);
   });
 });

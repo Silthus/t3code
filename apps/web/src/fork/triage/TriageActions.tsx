@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { readLocalApi } from "~/localApi";
 
+import { TriageCopySlack } from "./TriageCopySlack";
 import { TriageLinkThreadAction } from "./TriageLinkThreadAction";
 import { TriageNewThreadMenu } from "./TriageNewThreadMenu";
 
@@ -31,6 +32,7 @@ export function TriageActions({
       </Button>
       <TriageLinkThreadAction pullRequest={pullRequest} />
       <TriageNewThreadMenu pullRequest={pullRequest} />
+      <TriageCopySlack pullRequests={[pullRequest]} />
       {children}
     </div>
   );

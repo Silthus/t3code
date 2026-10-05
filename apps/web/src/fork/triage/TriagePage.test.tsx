@@ -39,9 +39,11 @@ vi.mock("./state", async () => {
   };
 });
 vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: () => ({ triagePreferences: { global: {}, repositories: {} } }),
   useClientSettingsHydrationStatus: () => boundary.hydration,
   ensureClientSettingsHydrated: boundary.hydrate,
 }));
+vi.mock("./TriageCopySlack", () => ({ TriageCopySlack: () => null }));
 vi.mock("./TriagePreferencesEditor", () => ({ TriagePreferencesEditor: () => null }));
 vi.mock("./TriageDetailPane", () => ({ TriageDetailPane: () => <div>Selected PR details</div> }));
 vi.mock("./TriageRow", () => ({ TriageRow: () => <li>Demo PR</li>, focusTriageRowSoon: () => {} }));

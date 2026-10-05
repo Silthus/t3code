@@ -1,3 +1,4 @@
+import { TriagePendingAction } from "./forkTriageActions.ts";
 import { TriageContext, TriagePreferences } from "./forkTriageContext.ts";
 import * as Schema from "effect/Schema";
 
@@ -8,6 +9,7 @@ export const TRIAGE_STATUSES = [
   "blocked",
   "changes-requested",
   "ready-to-merge",
+  "waiting-merge",
   "waiting-ci-authorization",
   "waiting-ci",
   "ready-for-review",
@@ -112,6 +114,9 @@ export const TriagePullRequest = Schema.Struct({
   signals: Schema.Array(Schema.String),
   openQuestions: Schema.Array(Schema.String),
   refinement: TriageRefinement,
+  pendingActions: Schema.optionalKey(Schema.Array(TriagePendingAction)),
+  waiting: Schema.optionalKey(Schema.Array(Schema.String)),
+  refinementEvidence: Schema.optionalKey(Schema.String),
   counts: TriageCounts,
   judgement: TriageJudgementState,
 });

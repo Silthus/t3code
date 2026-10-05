@@ -29,7 +29,7 @@ const SEARCH_DOCUMENT = `query($q: String!, $after: String) {
       number title url isDraft headRefOid createdAt updatedAt baseRefName headRefName
       additions deletions changedFiles
       repository { nameWithOwner }
-      reviewDecision mergeable
+      reviewDecision mergeable mergeQueueEntry { id }
       commits(last: 1) { nodes { commit { committedDate
         statusCheckRollup { state contexts(first: ${CHECKS_PER_PAGE}) { totalCount nodes { __typename
           ... on CheckRun { name status conclusion }
@@ -76,6 +76,7 @@ const PullRequestNode = Schema.Struct({
   repository: Schema.Struct({ nameWithOwner: TrimmedNonEmptyString }),
   reviewDecision: Schema.NullOr(Schema.String),
   mergeable: Schema.String,
+  mergeQueueEntry: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.String }))),
   commits: Nodes(
     Schema.Struct({
       commit: Schema.Struct({

@@ -26,6 +26,7 @@
  * SOFTWARE.
  */
 import type {
+  TriagePendingAction,
   TriageCounts,
   TriageGroup,
   TriagePullRequest,
@@ -45,6 +46,9 @@ export type TriageClassification = Pick<
   | "signals"
   | "openQuestions"
   | "refinement"
+  | "pendingActions"
+  | "waiting"
+  | "refinementEvidence"
   | "counts"
 >;
 
@@ -85,6 +89,8 @@ export function classifyTriage(
     signals: signalsOf(facts, now),
     openQuestions: openQuestionsOf(reading),
     refinement: refinementOf(facts, viewer),
+    ...pendingWork(reading),
+    refinementEvidence: refinementEvidenceOf(facts, viewer),
     counts: countsOf(facts),
   };
 }
@@ -146,6 +152,12 @@ function statusStep(reading: PullRequestReading): StatusStep {
       reasons: ["A reviewer asked for changes in a thread", ...threadBlockers],
     };
   }
+  if (facts.mergeQueued)
+    return {
+      status: "waiting-merge",
+      nextAction: "Wait in the merge queue",
+      reasons: ["PR is in the merge queue"],
+    };
   if (facts.review === "approved") return approvedStep(reading);
   return reviewStep(facts);
 }
@@ -237,6 +249,8 @@ function turnOf(reading: PullRequestReading, { status, nextAction: keep }: Statu
       };
     case "ready-to-merge":
       return { group: "ready-to-merge", nextAction: keep };
+    case "waiting-merge":
+      return { group: "waiting-on-others", nextAction: keep };
     case "waiting-ci-authorization":
       return { group: "waiting-on-others", nextAction: keep };
     case "waiting-ci":
@@ -384,4 +398,74 @@ function plural(count: number, word: string): string {
 
 function onlyIf(condition: boolean, item: string): ReadonlyArray<string> {
   return condition ? [item] : [];
+}
+
+function pendingWork(reading: PullRequestReading) {
+  const { facts, humanWaiting, botWaiting } = reading;
+  const pendingActions: TriagePendingAction[] = [];
+  const waiting: string[] = [];
+  const add = (kind: TriagePendingAction["kind"], label: string) =>
+    pendingActions.push({ kind, label });
+  if (facts.isDraft) add("finish", "Finish the implementation");
+  if (facts.mergeable === "CONFLICTING") add("conflicts", "Resolve merge conflicts");
+  if (facts.ci.state === "failing")
+    add(
+      "fix-ci",
+      facts.ci.failing.length ? `Fix failing CI: ${facts.ci.failing.join(", ")}` : "Fix failing CI",
+    );
+  const reReview = awaitsReReview(reading);
+  if (humanWaiting.length > 0 || (facts.review === "changes-requested" && !reReview)) {
+    add(
+      "feedback",
+      humanWaiting.length > 0 ? answerThreads(humanWaiting) : "Address the review feedback",
+    );
+  }
+  if (botWaiting > 0) add("judge-bots", `Judge ${plural(botWaiting, "unanswered bot finding")}`);
+  if (facts.ci.state === "cancelled") add("rerun-ci", "Re-run cancelled CI");
+  if (facts.ci.state === "pending" || facts.ci.state === "none")
+    waiting.push(
+      facts.ci.state === "pending" ? "Waiting for CI to finish" : "Waiting for check results",
+    );
+  if (!facts.isDraft) {
+    if (facts.ci.state === "awaiting-authorization") add("authorize-ci", "Authorize the CI run");
+    if (reReview) add("review", `Re-review the PR: ${facts.requestedReviewers.join(", ")}`);
+    else if (
+      facts.review !== "approved" &&
+      facts.review !== "changes-requested" &&
+      humanWaiting.length === 0
+    ) {
+      add(
+        "review",
+        facts.requestedReviewers.length
+          ? `Review the PR: ${facts.requestedReviewers.join(", ")}`
+          : "Review the PR",
+      );
+    }
+    if (facts.mergeQueued) waiting.push("Waiting in the merge queue");
+    else if (
+      facts.review === "approved" &&
+      facts.ci.state === "green" &&
+      facts.mergeable === "MERGEABLE" &&
+      reading.hardBlockers.length === 0 &&
+      humanWaiting.length === 0 &&
+      botWaiting === 0
+    ) {
+      add("merge", facts.trunk.managed ? "Comment /trunk merge" : "Merge the PR");
+    }
+    if (facts.mergeable === "UNKNOWN") waiting.push("Waiting for mergeability to be computed");
+  }
+  return { pendingActions, waiting };
+}
+
+function refinementEvidenceOf(facts: TriageFacts, viewer: string): string {
+  switch (refinementOf(facts, viewer)) {
+    case "approved":
+      return `Current approval from ${logins(facts.approvers) || "a reviewer"}`;
+    case "human-reviewed":
+      return "A human reviewer left a review or review thread";
+    case "self-reviewed":
+      return "Bot review or review-thread evidence; no QA swarm is inferred";
+    case "raw":
+      return "No human or bot review evidence yet";
+  }
 }

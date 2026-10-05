@@ -548,3 +548,64 @@ describe("counts", () => {
     });
   });
 });
+
+describe("pending actions for the author's queues", () => {
+  it("keeps team review visible alongside author conflicts and named failing checks", () => {
+    expect(
+      classify({
+        mergeable: "CONFLICTING",
+        ci: ci({ state: "failing", failing: ["unit", "build"] }),
+      }),
+    ).toMatchObject({
+      pendingActions: [
+        { kind: "conflicts", label: "Resolve merge conflicts" },
+        { kind: "fix-ci", label: "Fix failing CI: unit, build" },
+        { kind: "review", label: "Review the PR" },
+      ],
+    });
+  });
+});
+
+it("derives team authorization and review together without turning pending CI into work", () => {
+  expect(
+    classify({ ci: ci({ state: "awaiting-authorization", awaitingAuthorization: 1 }) })
+      .pendingActions,
+  ).toEqual([
+    { kind: "authorize-ci", label: "Authorize the CI run" },
+    { kind: "review", label: "Review the PR" },
+  ]);
+  expect(
+    classify({ review: "approved", ci: ci({ state: "pending", pending: ["build"] }) }),
+  ).toMatchObject({ pendingActions: [], waiting: ["Waiting for CI to finish"] });
+  expect(classify({ review: "approved", mergeQueued: true })).toMatchObject({
+    pendingActions: [],
+    waiting: ["Waiting in the merge queue"],
+  });
+});
+it("uses active thread facts rather than broad counts and treats requested re-review as team work", () => {
+  expect(
+    classify({ threads: [{ ...humanThread, isOutdated: true }, resolved(botThread)] })
+      .pendingActions,
+  ).toEqual([{ kind: "review", label: "Review the PR" }]);
+  expect(
+    classify({
+      review: "changes-requested",
+      changeRequesters: [human("alice")],
+      requestedReviewers: ["alice"],
+    }).pendingActions,
+  ).toEqual([{ kind: "review", label: "Re-review the PR: alice" }]);
+  expect(classify({ review: "approved", threads: [botThread] }).pendingActions).toEqual([
+    { kind: "judge-bots", label: "Judge 1 unanswered bot finding" },
+  ]);
+  expect(classify({ threads: [humanThread] }).pendingActions).toEqual([
+    { kind: "feedback", label: "Answer 1 thread from alice" },
+  ]);
+  expect(classify({ review: "approved", mergeable: "UNKNOWN" })).toMatchObject({
+    pendingActions: [],
+    waiting: ["Waiting for mergeability to be computed"],
+  });
+});
+
+it("reports a queued merge as waiting rather than ready to merge", () => {
+  expect(classify({ review: "approved", mergeQueued: true }).status).toBe("waiting-merge");
+});

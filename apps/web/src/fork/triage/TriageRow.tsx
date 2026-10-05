@@ -21,6 +21,10 @@ import { Badge } from "~/components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
+import { useClientSettings } from "~/hooks/useSettings";
+import { effectiveTriageActions } from "./grouping.logic";
+import { triageSummary } from "./slack.logic";
+import { TriageCopySlack } from "./TriageCopySlack";
 import { TriageLinkedThreads } from "./TriageLinkedThreads";
 import { TriageRiskRow } from "./TriageRisk";
 
@@ -29,16 +33,17 @@ type BadgeVariant = "error" | "warning" | "success" | "info" | "outline";
 const STATUS_PRESENTATION: Record<TriageStatus, { label: string; variant: BadgeVariant }> = {
   blocked: { label: "Blocked", variant: "error" },
   "changes-requested": { label: "Changes requested", variant: "warning" },
+  "waiting-merge": { label: "Waiting in merge queue", variant: "info" },
   "ready-to-merge": { label: "Ready to merge", variant: "success" },
   "waiting-ci-authorization": { label: "Awaiting CI authorization", variant: "info" },
   "waiting-ci": { label: "Waiting on CI", variant: "info" },
-  "ready-for-review": { label: "Ready for review", variant: "outline" },
+  "ready-for-review": { label: "Waiting for review", variant: "outline" },
   draft: { label: "Draft", variant: "outline" },
 };
 
 const REFINEMENT_LADDER: ReadonlyArray<{ level: TriageRefinement; label: string }> = [
   { level: "raw", label: "Raw" },
-  { level: "self-reviewed", label: "Self-reviewed" },
+  { level: "self-reviewed", label: "Bot-reviewed" },
   { level: "human-reviewed", label: "Human-reviewed" },
   { level: "approved", label: "Approved" },
 ];
@@ -95,23 +100,34 @@ export function refinementLabel(refinement: TriageRefinement): string {
   return REFINEMENT_LADDER.find((step) => step.level === refinement)?.label ?? refinement;
 }
 
-export function RefinementLadder({ refinement }: { refinement: TriageRefinement }) {
-  const reached = REFINEMENT_LADDER.findIndex((step) => step.level === refinement);
-  const label = `Refinement: ${refinementLabel(refinement)}`;
+export function RefinementLadder({
+  refinement,
+  evidence,
+}: {
+  refinement: TriageRefinement;
+  evidence?: string | undefined;
+}) {
   return (
-    <WithTooltip tip={label}>
-      <span role="img" aria-label={label} className="flex gap-0.5">
-        {REFINEMENT_LADDER.map((step, index) => (
-          <span
-            key={step.level}
-            className={cn(
-              "h-1.5 w-3 rounded-full",
-              index <= reached ? "bg-foreground/70" : "bg-foreground/15",
-            )}
-          />
-        ))}
-      </span>
+    <WithTooltip tip={evidence ?? `Refinement: ${refinementLabel(refinement)}`}>
+      <span className="text-xs text-muted-foreground">{refinementLabel(refinement)}</span>
     </WithTooltip>
+  );
+}
+
+export function TriagePendingWork({ pullRequest }: { pullRequest: TriagePullRequest }) {
+  const { triagePreferences } = useClientSettings();
+  const actions = effectiveTriageActions(pullRequest, triagePreferences);
+  return (
+    <span className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {actions.map((action) => (
+        <span key={action.kind} className="break-words">
+          {action.owner === "author" ? "Me" : "Team"}: {action.label}
+        </span>
+      ))}
+      {(pullRequest.waiting ?? []).map((state) => (
+        <span key={state}>{state}</span>
+      ))}
+    </span>
   );
 }
 
@@ -210,17 +226,29 @@ export function TriageRow({
             </span>
             <span className="ms-auto flex shrink-0 items-center gap-2">
               <StatusBadge status={pullRequest.status} />
-              <RefinementLadder refinement={pullRequest.refinement} />
+              <RefinementLadder
+                refinement={pullRequest.refinement}
+                evidence={pullRequest.refinementEvidence}
+              />
             </span>
           </span>
           <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
-            <span className="text-sm font-semibold">{pullRequest.nextAction}</span>
+            <span className="line-clamp-2 text-sm break-words">{triageSummary(pullRequest)}</span>
             <Signals pullRequest={pullRequest} />
           </span>
+          {pullRequest.blockers.length > 0 ? (
+            <span className="text-xs break-words text-destructive">
+              {pullRequest.blockers.join(" · ")}
+            </span>
+          ) : null}
+          <TriagePendingWork pullRequest={pullRequest} />
         </button>
         <span className="shrink-0 text-xs text-muted-foreground">
           <TriageRiskRow pullRequest={pullRequest} />
         </span>
+      </div>
+      <div className="px-2">
+        <TriageCopySlack pullRequests={[pullRequest]} />
       </div>
       <TriageLinkedThreads pullRequest={pullRequest} />
     </li>
