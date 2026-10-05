@@ -14,7 +14,7 @@ import {
   selectProjectGroupingSettings,
 } from "~/logicalProject";
 
-const preparingProjects = new Set<string>();
+import { claimCheckoutPreparation } from "./checkoutPreparation";
 
 export function useStartTriageThread(project: EnvironmentProject | null) {
   const newThread = useNewThreadHandler();
@@ -28,14 +28,17 @@ export function useStartTriageThread(project: EnvironmentProject | null) {
   const start = async (url: string, prompt: string) => {
     if (project === null) return;
     const projectKey = deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
-    if (preparingProjects.has(projectKey)) {
+    const releasePreparation = claimCheckoutPreparation(
+      projectKey,
+      scopeProjectRef(project.environmentId, project.id),
+    );
+    if (releasePreparation === null) {
       toastManager.add({
         type: "warning",
         title: "A pull request draft is already preparing in this project",
       });
       return;
     }
-    preparingProjects.add(projectKey);
     setPreparing(true);
     const toastId = toastManager.add({
       type: "loading",
@@ -47,14 +50,11 @@ export function useStartTriageThread(project: EnvironmentProject | null) {
         branch: null,
         worktreePath: null,
         envMode: "local",
-      });
-      if (opened === null) throw new Error("Try again from the project, or open a draft first.");
-      draftId = opened.draftId;
-      useComposerDraftStore.getState().setDraftThreadContext(draftId, {
-        projectRef: scopeProjectRef(project.environmentId, project.id),
         environmentSelection: "manual",
         loadBalancedEnvironmentId: null,
       });
+      if (opened === null) throw new Error("Try again from the project, or open a draft first.");
+      draftId = opened.draftId;
       const prepared = await prepareThread.run({
         reference: url,
         mode: "worktree",
@@ -129,7 +129,7 @@ export function useStartTriageThread(project: EnvironmentProject | null) {
           );
         }
       }
-      preparingProjects.delete(projectKey);
+      releasePreparation();
       setPreparing(false);
     }
   };
