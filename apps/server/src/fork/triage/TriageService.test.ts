@@ -416,3 +416,45 @@ it.effect("points at the gh login when gh fails before GitHub answers", () => {
     );
   }).pipe(Effect.provide(github.layer));
 });
+
+it.effect("projects structured merge queue membership into a non-executable waiting state", () => {
+  const node = {
+    ...approvedNode!,
+    mergeQueueEntry: { id: "synthetic-queue-entry" },
+    reviewThreads: { totalCount: 0, nodes: [] },
+    comments: { nodes: [] },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            committedDate: "2026-10-05T00:00:00Z",
+            statusCheckRollup: {
+              state: "SUCCESS",
+              contexts: {
+                totalCount: 1,
+                nodes: [
+                  {
+                    __typename: "CheckRun",
+                    name: "unit",
+                    status: "COMPLETED",
+                    conclusion: "SUCCESS",
+                  },
+                ],
+              },
+            },
+            checkSuites: { nodes: [] },
+          },
+        },
+      ],
+    },
+  };
+  const { layer } = fakeGitHub([answerPage(pageOf([node], false, null))]);
+  return Effect.gen(function* () {
+    const current = yield* report();
+    const pr = pullRequest(current, node.number);
+    assert.strictEqual(pr.status, "waiting-ci");
+    assert.strictEqual(pr.mergeQueued, true);
+    assert.deepEqual(pr.pendingActions, []);
+    assert.deepEqual(pr.waiting, ["Waiting in the merge queue"]);
+  }).pipe(Effect.provide(layer));
+});

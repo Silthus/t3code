@@ -1,4 +1,6 @@
 import {
+  TRIAGE_ACTION_KINDS,
+  resolveTriageOwner,
   TRIAGE_PRESETS,
   TRIAGE_PROFILE_SECTIONS,
   triageRepositoryId,
@@ -38,7 +40,7 @@ export function TriagePreferencesEditor({
   const [open, setOpen] = useState(false);
   const [repository, setRepository] = useState<string | null>(null);
   const [draft, setDraft] = useState<TriageContext>({});
-  const [tab, setTab] = useState<"profile" | "assessment" | "actions">("profile");
+  const [tab, setTab] = useState<"profile" | "assessment" | "actions" | "owners">("profile");
   const [reset, setReset] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +139,7 @@ export function TriagePreferencesEditor({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2" aria-label="Instruction sections">
-                  {(["profile", "assessment", "actions"] as const).map((value) => (
+                  {(["profile", "assessment", "actions", "owners"] as const).map((value) => (
                     <Button
                       key={value}
                       type="button"
@@ -150,11 +152,65 @@ export function TriagePreferencesEditor({
                         ? "Profile"
                         : value === "assessment"
                           ? "Assessment"
-                          : "Actions"}
+                          : value === "actions"
+                            ? "Actions"
+                            : "Action ownership"}
                     </Button>
                   ))}
                 </div>
-                {tab === "actions" ? (
+                {tab === "owners" ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Fixed assignments determine the queues and Slack asks. Profile prose does not
+                      change them. Removing an assignment restores inheritance.
+                    </p>
+                    {TRIAGE_ACTION_KINDS.map(([kind, label, builtIn]) => {
+                      const inherited =
+                        repository === null
+                          ? builtIn
+                          : resolveTriageOwner(
+                              { ...saved, repositories: {} },
+                              { host: "github.com", repository: "inherited" },
+                              kind,
+                            );
+                      return (
+                        <div key={kind} className="flex flex-col gap-2">
+                          <Label id={`${id}-owner-${kind}`}>{label}</Label>
+                          <Select
+                            value={draft.owners?.[kind] ?? "inherit"}
+                            disabled={saving}
+                            onValueChange={(value) => {
+                              if (value !== "author" && value !== "team" && value !== "inherit")
+                                return;
+                              const owners = { ...draft.owners };
+                              if (value === "inherit") delete owners[kind];
+                              else owners[kind] = value;
+                              setReset(false);
+                              setDraft({ ...draft, owners });
+                            }}
+                          >
+                            <SelectTrigger aria-labelledby={`${id}-owner-${kind}`}>
+                              <SelectValue>
+                                {draft.owners?.[kind] === "author"
+                                  ? "Me"
+                                  : draft.owners?.[kind] === "team"
+                                    ? "Team"
+                                    : `Inherit (${inherited === "author" ? "me" : "team"})`}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectPopup>
+                              <SelectItem value="inherit">
+                                Inherit ({inherited === "author" ? "me" : "team"})
+                              </SelectItem>
+                              <SelectItem value="author">Me</SelectItem>
+                              <SelectItem value="team">Team</SelectItem>
+                            </SelectPopup>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : tab === "actions" ? (
                   <>
                     <p className="text-xs text-muted-foreground">
                       Additional instructions for each preset. The original task and PR link are

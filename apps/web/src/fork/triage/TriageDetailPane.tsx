@@ -21,7 +21,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { pickProjectForPullRequest, type PullRequestPanelTarget } from "./projectMatch.logic";
 import { TriageLinkedThreads } from "./TriageLinkedThreads";
 import { TriageActions } from "./TriageActions";
-import { CiSignal, plural, RefinementLadder, refinementLabel, StatusBadge } from "./TriageRow";
+import { CiSignal, plural, RefinementLadder, TriagePendingWork, StatusBadge } from "./TriageRow";
 
 const REVIEW_LABELS: Record<TriageReviewState, string> = {
   approved: "Approved",
@@ -36,6 +36,7 @@ const MERGEABLE_LABELS: Record<TriageMergeable, string> = {
   UNKNOWN: "Not computed yet",
 };
 
+import { triageSummary } from "./slack.logic";
 import { TriageRiskDetail } from "./TriageRisk";
 
 function getShortcutContext() {
@@ -181,10 +182,12 @@ function TriageHeader({
             <span className="font-mono break-all tabular-nums">
               {repository}#{number}
             </span>
-            <StatusBadge status={pullRequest.status} />
+            <StatusBadge status={pullRequest.status} mergeQueued={pullRequest.mergeQueued} />
             <span className="inline-flex items-center gap-1.5">
-              <RefinementLadder refinement={pullRequest.refinement} />
-              <span aria-hidden>{refinementLabel(pullRequest.refinement)}</span>
+              <RefinementLadder
+                refinement={pullRequest.refinement}
+                evidence={pullRequest.refinementEvidence}
+              />
             </span>
           </span>
         </div>
@@ -197,7 +200,9 @@ function TriageHeader({
           <XIcon aria-hidden />
         </Button>
       </div>
-      <p className="text-sm font-semibold">{pullRequest.nextAction}</p>
+      <p className="text-sm break-words">{triageSummary(pullRequest)}</p>
+      <p className="text-xs text-muted-foreground">{pullRequest.refinementEvidence}</p>
+      <TriagePendingWork pullRequest={pullRequest} />
       <TriageActions pullRequest={pullRequest}>{actionsSlot}</TriageActions>
       <TriageLinkedThreads pullRequest={pullRequest} />
       {headerSlot}

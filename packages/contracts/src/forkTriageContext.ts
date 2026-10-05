@@ -1,3 +1,8 @@
+import {
+  TRIAGE_ACTION_KINDS,
+  TriageActionOwners,
+  type TriageActionKind,
+} from "./forkTriageActions.ts";
 import * as Schema from "effect/Schema";
 
 export const TRIAGE_PROFILE_SECTIONS = [
@@ -26,6 +31,7 @@ const ActionInstructions = Schema.Struct({
   custom: Schema.optionalKey(AuthoredText),
 });
 export const TriageContext = Schema.Struct({
+  owners: Schema.optionalKey(TriageActionOwners),
   aboutMe: Schema.optionalKey(AuthoredText),
   ownership: Schema.optionalKey(AuthoredText),
   routing: Schema.optionalKey(AuthoredText),
@@ -43,7 +49,7 @@ export type TriagePreferences = typeof TriagePreferences.Type;
 export const DEFAULT_TRIAGE_PREFERENCES: TriagePreferences = { global: {}, repositories: {} };
 
 export function triageRepositoryId(key: { readonly host: string; readonly repository: string }) {
-  return `${key.host}/${key.repository}`.toLowerCase();
+  return `${key.host.trim()}/${key.repository.trim()}`.toLowerCase();
 }
 
 export function resolveTriageContext(
@@ -70,4 +76,16 @@ export function triageProfileText(context: TriageContext) {
   return TRIAGE_PROFILE_SECTIONS.flatMap(([field, label]) =>
     context[field]?.trim() ? [`${label}:\n${context[field]!.trim()}`] : [],
   ).join("\n\n");
+}
+
+export function resolveTriageOwner(
+  settings: TriagePreferences,
+  key: { readonly host: string; readonly repository: string },
+  kind: TriageActionKind,
+) {
+  return (
+    settings.repositories[triageRepositoryId(key)]?.owners?.[kind] ??
+    settings.global.owners?.[kind] ??
+    TRIAGE_ACTION_KINDS.find(([action]) => action === kind)![2]
+  );
 }

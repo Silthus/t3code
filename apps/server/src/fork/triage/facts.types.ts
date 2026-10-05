@@ -62,6 +62,7 @@ export interface TriageFacts {
   readonly changeRequesters: ReadonlyArray<TriageReviewer>;
   readonly requestedReviewers: ReadonlyArray<string>;
   readonly mergeable: TriageMergeable;
+  readonly mergeQueued?: boolean;
   readonly ci: TriageCiFacts;
   readonly trunk: TriageTrunkFacts;
   readonly threads: ReadonlyArray<TriageThreadFacts>;

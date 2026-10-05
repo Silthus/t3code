@@ -69,6 +69,7 @@ export function toFacts(node: TriagePullRequestNode, viewer: string): TriageFact
       ? (node.mergeable as TriageMergeable)
       : "UNKNOWN",
     ci: withUnlistedChecks(ciFacts(head), head),
+    mergeQueued: node.mergeQueueEntry != null,
     trunk: trunkFacts(node),
     threads: node.reviewThreads.nodes.map((thread) => threadFacts(thread, viewer)),
     threadsTruncated: node.reviewThreads.totalCount > THREADS_PER_PAGE,

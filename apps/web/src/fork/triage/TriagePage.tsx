@@ -1,9 +1,4 @@
-import type {
-  EnvironmentId,
-  TriageGroup,
-  TriagePullRequest,
-  TriageReport,
-} from "@t3tools/contracts";
+import type { EnvironmentId, TriagePullRequest, TriageReport } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CircleAlertIcon } from "lucide-react";
 import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,12 +16,18 @@ import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import {
   useClientSettingsHydrationStatus,
   ensureClientSettingsHydrated,
+  useClientSettings,
 } from "~/hooks/useSettings";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
-import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
+import {
+  groupTriagePullRequests,
+  TRIAGE_QUEUE_LABELS,
+  type TriagePullRequestGroup,
+} from "./grouping.logic";
+import { TriageCopySlack } from "./TriageCopySlack";
 import { TriagePreferencesEditor } from "./TriagePreferencesEditor";
 import { TriageDetailPane } from "./TriageDetailPane";
 import { focusTriageRowSoon, TriageRow } from "./TriageRow";
@@ -79,13 +80,6 @@ function useEscapeLeavesFieldFirst(active: boolean) {
   }, [active]);
 }
 
-const GROUP_LABELS: Record<TriageGroup, string> = {
-  "needs-you": "Needs you",
-  "ready-to-merge": "Ready to merge",
-  "waiting-on-others": "Waiting on others",
-  drafts: "Drafts",
-};
-
 function UpdatedLabel({ updating, fetchedAt }: { updating: boolean; fetchedAt: string | null }) {
   useNowMinute();
   if (updating) return <span>Updating…</span>;
@@ -98,7 +92,7 @@ function GroupCounts({ groups }: { groups: ReadonlyArray<TriagePullRequestGroup>
     <span className="flex flex-wrap items-center gap-1.5">
       {groups.map(({ group, pullRequests }) => (
         <Badge key={group} variant="outline">
-          {GROUP_LABELS[group]} {pullRequests.length}
+          {TRIAGE_QUEUE_LABELS[group]} {pullRequests.length}
         </Badge>
       ))}
     </span>
@@ -125,9 +119,9 @@ function TriageGroups({
     return <p className="text-sm text-muted-foreground">No open pull requests of yours.</p>;
   }
   return groups.map(({ group, pullRequests }) => (
-    <section key={group} aria-label={GROUP_LABELS[group]} className="flex flex-col gap-1">
+    <section key={group} aria-label={TRIAGE_QUEUE_LABELS[group]} className="flex flex-col gap-1">
       <h2 className="px-2 text-xs font-medium text-muted-foreground">
-        {GROUP_LABELS[group]} · {pullRequests.length}
+        {TRIAGE_QUEUE_LABELS[group]} · {pullRequests.length}
       </h2>
       <ul className="flex flex-col">
         {pullRequests.map((pullRequest) => (
@@ -178,7 +172,33 @@ function TriageBody({
       <p className="text-sm text-muted-foreground">Loading pull requests…</p>
     ) : null;
   }
-  return report.fetchedAt !== null ? <TriageGroups groups={groups} selection={selection} /> : null;
+  if (report.fetchedAt === null) return null;
+  const legacy = report.pullRequests.filter((pr) => pr.pendingActions === undefined);
+  return (
+    <>
+      {legacy.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <p role="status" className="text-sm text-muted-foreground">
+            Action ownership needs an updated fork server. Update this environment to use the author
+            queues and Slack copy.
+          </p>
+          <ul className="flex flex-col">
+            {legacy.map((pullRequest) => (
+              <TriageRow
+                key={`${pullRequest.key.repository}#${pullRequest.key.number}`}
+                pullRequest={pullRequest}
+                selected={isSelectedPullRequest(pullRequest, selection.search)}
+                onSelect={selection.select}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {groups.length > 0 || legacy.length === 0 ? (
+        <TriageGroups groups={groups} selection={selection} />
+      ) : null}
+    </>
+  );
 }
 
 function TriageHeader({
@@ -199,6 +219,7 @@ function TriageHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <GroupCounts groups={groups} />
+      <TriageCopySlack teamQueue pullRequests={view?.report?.pullRequests ?? NO_PULL_REQUESTS} />
       <TriagePreferencesEditor pullRequests={view?.report?.pullRequests ?? NO_PULL_REQUESTS} />
       <span className="ms-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
         {view ? (
@@ -237,7 +258,11 @@ function TriageLayout({
   preferencesNotice?: ReactNode;
 }) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
-  const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
+  const { triagePreferences } = useClientSettings();
+  const groups = useMemo(
+    () => groupTriagePullRequests(pullRequests, triagePreferences),
+    [pullRequests, triagePreferences],
+  );
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
