@@ -1,3 +1,4 @@
+import { TriageContext, TriagePreferences } from "./forkTriageContext.ts";
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -124,8 +125,14 @@ export const TriageReport = Schema.Struct({
 });
 export type TriageReport = typeof TriageReport.Type;
 
-export const TriageReportInput = Schema.Struct({ refresh: Schema.Boolean });
+export const TriageReportInput = Schema.Struct({
+  refresh: Schema.Boolean,
+  preferences: Schema.optionalKey(TriagePreferences),
+});
 export type TriageReportInput = typeof TriageReportInput.Type;
 
-export const TriageAssessInput = ThreadPullRequestKey;
+export const TriageAssessInput = Schema.Struct({
+  ...ThreadPullRequestKey.fields,
+  context: Schema.optionalKey(TriageContext),
+});
 export type TriageAssessInput = typeof TriageAssessInput.Type;

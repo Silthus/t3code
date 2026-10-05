@@ -18,11 +18,16 @@ import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { isElectron } from "~/env";
 import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import {
+  useClientSettingsHydrationStatus,
+  ensureClientSettingsHydrated,
+} from "~/hooks/useSettings";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { groupTriagePullRequests, type TriagePullRequestGroup } from "./grouping.logic";
+import { TriagePreferencesEditor } from "./TriagePreferencesEditor";
 import { TriageDetailPane } from "./TriageDetailPane";
 import { focusTriageRowSoon, TriageRow } from "./TriageRow";
 import { isSelectedPullRequest, type TriageSearch } from "./selection.logic";
@@ -194,6 +199,7 @@ function TriageHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <GroupCounts groups={groups} />
+      <TriagePreferencesEditor pullRequests={view?.report?.pullRequests ?? NO_PULL_REQUESTS} />
       <span className="ms-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
         {view ? (
           <>
@@ -222,11 +228,13 @@ function TriageLayout({
   selection,
   detail,
   listRef,
+  preferencesNotice,
 }: {
   view: TriageReportView | null;
   selection: TriageSelection;
   detail: ReactNode;
   listRef?: Ref<HTMLDivElement>;
+  preferencesNotice?: ReactNode;
 }) {
   const pullRequests = view?.report?.pullRequests ?? NO_PULL_REQUESTS;
   const groups = useMemo(() => groupTriagePullRequests(pullRequests), [pullRequests]);
@@ -247,9 +255,11 @@ function TriageLayout({
               {view ? (
                 <TriageBody view={view} groups={groups} selection={selection} />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  Connect an environment to see triage.
-                </p>
+                (preferencesNotice ?? (
+                  <p className="text-sm text-muted-foreground">
+                    Connect an environment to see triage.
+                  </p>
+                ))
               )}
             </WorkspacePageContainer>
           </div>
@@ -285,12 +295,13 @@ function TriageEnvironmentPage({
   const previousSelection = useRef(selected);
   const { clear: clearSelection, search } = selection;
   useEffect(() => {
+    if (view.report === null) return;
     if (previousSelection.current && !selected && search.repository) {
       clearSelection();
       listRef.current?.focus({ preventScroll: true });
     }
     previousSelection.current = selected;
-  }, [selected, clearSelection, search.repository]);
+  }, [selected, clearSelection, search.repository, view.report]);
   const closeDetail = () => {
     selection.clear();
     if (selected) focusTriageRowSoon(selected);
@@ -325,7 +336,44 @@ function TriageWithoutEnvironment({ selection }: { selection: TriageSelection })
 
 export function TriagePage() {
   const selection = useTriageSelection();
+  const hydration = useClientSettingsHydrationStatus();
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const loadPreferences = useCallback(() => {
+    void ensureClientSettingsHydrated().catch((failure) => {
+      setHydrationError(
+        failure instanceof Error ? failure.message : "Could not load local triage preferences.",
+      );
+    });
+  }, []);
+  useEffect(loadPreferences, [loadPreferences]);
   const environmentId = useTriageEnvironmentId();
+  if (hydration !== "ready")
+    return (
+      <TriageLayout
+        view={null}
+        selection={selection}
+        detail={null}
+        preferencesNotice={
+          hydration === "failed" ? (
+            <div className="flex flex-col items-start gap-2">
+              <ErrorLine message={hydrationError ?? "Could not load local triage preferences."} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setHydrationError(null);
+                  loadPreferences();
+                }}
+              >
+                Retry preferences
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading triage preferences…</p>
+          )
+        }
+      />
+    );
   return environmentId === null ? (
     <TriageWithoutEnvironment selection={selection} />
   ) : (

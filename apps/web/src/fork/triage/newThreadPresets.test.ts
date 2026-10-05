@@ -50,3 +50,18 @@ describe("presetPrompt", () => {
     );
   });
 });
+
+it("adds authored profile and preset instructions without replacing the required unsent task", () => {
+  const prompt = presetPrompt(
+    "fix-ci",
+    { url: "https://github.com/acme/app/pull/7", ci: { failing: ["lint"] } },
+    "",
+    { aboutMe: "I maintain synthetic widgets.", actions: { "fix-ci": "Keep changes small." } },
+  );
+  expect(prompt).toContain(
+    "Fix the failing CI on https://github.com/acme/app/pull/7: lint. Push the fix.",
+  );
+  expect(prompt).toContain("About me:\nI maintain synthetic widgets.");
+  expect(prompt).toContain("Keep changes small.");
+  expect(prompt).not.toContain("undefined");
+});

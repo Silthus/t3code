@@ -374,18 +374,14 @@ it.effect(
 it.effect("retains a cached newer head when the old job completes during refresh", () =>
   Effect.gen(function* () {
     const memory = yield* KeyValueStore.KeyValueStore;
-    const id = "github.com/acme/app#100";
-    const cached = {
-      headSha: "new-head",
-      promptVersion: 1,
-      judgement: {
-        ...verdict,
-        headSha: "new-head",
-        basis: "full diff",
-        judgedAt: "2026-10-03T10:00:00Z",
-      },
-    };
-    yield* memory.set(id, encodeJson(cached));
+    const seeded = harness({ store: memory });
+    seeded.changeHead();
+    yield* Effect.gen(function* () {
+      const triage = yield* TriageService.TriageService;
+      yield* triage.report({ refresh: false }, "operate");
+      yield* triage.awaitJudgement(key(100));
+    }).pipe(Effect.provide(seeded.layer));
+    let cachedId = "";
     const getStarted = yield* Deferred.make<void>();
     const releaseGet = yield* Deferred.make<void>();
     const releaseAnswer = yield* Deferred.make<void>();
@@ -396,7 +392,8 @@ it.effect("retains a cached newer head when the old job completes during refresh
       ...memory,
       get: (key) =>
         Effect.gen(function* () {
-          if (key === id && ++reads === 2) {
+          if (key.includes("#100/") && ++reads === 2) {
+            cachedId = key;
             yield* Deferred.succeed(getStarted, undefined);
             yield* Deferred.await(releaseGet);
           }
@@ -437,7 +434,8 @@ it.effect("retains a cached newer head when the old job completes during refresh
       const report = yield* Fiber.join(concurrent);
       assert.strictEqual(report.pullRequests[0]!.judgement._tag, "ready");
       assert.strictEqual(report.pullRequests[0]!.headSha, "new-head");
-      assert.deepStrictEqual(decodeJson((yield* memory.get(id))!), cached);
+      const persisted = decodeJson((yield* memory.get(cachedId))!) as { headSha: string };
+      assert.strictEqual(persisted.headSha, "new-head");
     }).pipe(Effect.provide(fake.layer));
   }).pipe(Effect.provide(KeyValueStore.layerMemory)),
 );
@@ -454,3 +452,114 @@ it.effect("refuses a diff that belongs to a head pushed during the read", () => 
     assert.lengthOf(fake.generated, 0);
   }).pipe(Effect.provide(fake.layer));
 });
+
+it.effect("keeps concurrent same-head profiles separate through completion and restart", () =>
+  Effect.gen(function* () {
+    const store = yield* KeyValueStore.KeyValueStore;
+    const started = yield* Deferred.make<void>();
+    const releaseOld = yield* Deferred.make<void>();
+    let calls = 0;
+    const fake = harness({
+      store,
+      answer: Effect.gen(function* () {
+        const call = ++calls;
+        if (call === 1) {
+          yield* Deferred.succeed(started, undefined);
+          yield* Deferred.await(releaseOld);
+        }
+        return { ...verdict, summary: call === 1 ? "Old profile result" : "New profile result" };
+      }),
+    });
+    const oldContext = {
+      aboutMe: "I own synthetic widgets.",
+      assessment: "Prioritize compatibility.",
+    };
+    const newContext = { aboutMe: "I maintain the demo.", assessment: "Prioritize retries." };
+    const input = (context: typeof oldContext) => ({
+      refresh: false,
+      preferences: { global: context, repositories: {} },
+    });
+    yield* Effect.gen(function* () {
+      const triage = yield* TriageService.TriageService;
+      yield* triage.report(input(oldContext), "operate");
+      yield* Deferred.await(started);
+      const next = yield* triage.report(input(newContext), "operate");
+      assert.strictEqual(next.pullRequests[0]!.judgement._tag, "pending");
+      const fresh = yield* triage.awaitJudgement({ ...key(100), context: newContext });
+      assert.strictEqual(fresh._tag, "ready");
+      if (fresh._tag === "ready") assert.strictEqual(fresh.judgement.summary, "New profile result");
+      yield* Deferred.succeed(releaseOld, undefined);
+      const old = yield* triage.awaitJudgement({ ...key(100), context: oldContext });
+      assert.strictEqual(old._tag, "ready");
+      if (old._tag === "ready") assert.strictEqual(old.judgement.summary, "Old profile result");
+      const current = yield* triage.report(input(newContext), "operate");
+      assert.deepStrictEqual(current.pullRequests[0]!.judgement, fresh);
+      assert.strictEqual(current.pullRequests[1]!.judgement._tag, "not-requested");
+      assert.include(fake.generated[0]!, "I own synthetic widgets.");
+      assert.notInclude(fake.generated[0]!, "Prioritize retries.");
+    }).pipe(Effect.provide(fake.layer));
+    const restarted = harness({ store });
+    yield* Effect.gen(function* () {
+      const triage = yield* TriageService.TriageService;
+      const current = yield* triage.report(input(newContext), "operate");
+      assert.strictEqual(current.pullRequests[0]!.judgement._tag, "ready");
+      assert.lengthOf(restarted.generated, 0);
+      const other = yield* triage.report({ refresh: false }, "read");
+      assert.strictEqual(other.pullRequests[0]!.judgement._tag, "not-requested");
+    }).pipe(Effect.provide(restarted.layer));
+  }).pipe(Effect.provide(KeyValueStore.layerMemory)),
+);
+
+it.effect(
+  "snapshots queued profile sections and does not invalidate risk for action-only edits",
+  () =>
+    Effect.gen(function* () {
+      const twoStarted = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let starts = 0;
+      const fake = harness({
+        answer: Effect.gen(function* () {
+          if (++starts === 2) yield* Deferred.succeed(twoStarted, undefined);
+          yield* Deferred.await(release);
+          return verdict;
+        }),
+      });
+      fake.setNodes(3);
+      const context = {
+        aboutMe: "I own the synthetic demo.",
+        actions: { "fix-ci": "Run focused checks." },
+      };
+      const preferences = { global: context, repositories: {} };
+      yield* Effect.gen(function* () {
+        const triage = yield* TriageService.TriageService;
+        yield* triage.report({ refresh: false, preferences }, "operate");
+        yield* Deferred.await(twoStarted);
+        context.aboutMe = "Changed after enqueue.";
+        yield* Deferred.succeed(release, undefined);
+        yield* triage.awaitJudgement({
+          ...key(102),
+          context: { aboutMe: "I own the synthetic demo." },
+        });
+        assert.include(fake.generated[2]!, "I own the synthetic demo.");
+        assert.notInclude(fake.generated[2]!, "Changed after enqueue.");
+        const current = yield* triage.report(
+          {
+            refresh: false,
+            preferences: {
+              global: {
+                aboutMe: "I own the synthetic demo.",
+                actions: { "fix-ci": "A different action." },
+              },
+              repositories: {},
+            },
+          },
+          "operate",
+        );
+        assert.deepStrictEqual(
+          current.pullRequests.map((pr) => pr.judgement._tag),
+          ["ready", "ready", "ready"],
+        );
+        assert.lengthOf(fake.generated, 3);
+      }).pipe(Effect.provide(fake.layer));
+    }),
+);
