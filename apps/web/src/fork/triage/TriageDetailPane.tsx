@@ -182,7 +182,7 @@ function TriageHeader({
             <span className="font-mono break-all tabular-nums">
               {repository}#{number}
             </span>
-            <StatusBadge status={pullRequest.status} />
+            <StatusBadge status={pullRequest.status} mergeQueued={pullRequest.mergeQueued} />
             <span className="inline-flex items-center gap-1.5">
               <RefinementLadder
                 refinement={pullRequest.refinement}

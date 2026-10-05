@@ -33,7 +33,6 @@ type BadgeVariant = "error" | "warning" | "success" | "info" | "outline";
 const STATUS_PRESENTATION: Record<TriageStatus, { label: string; variant: BadgeVariant }> = {
   blocked: { label: "Blocked", variant: "error" },
   "changes-requested": { label: "Changes requested", variant: "warning" },
-  "waiting-merge": { label: "Waiting in merge queue", variant: "info" },
   "ready-to-merge": { label: "Ready to merge", variant: "success" },
   "waiting-ci-authorization": { label: "Awaiting CI authorization", variant: "info" },
   "waiting-ci": { label: "Waiting on CI", variant: "info" },
@@ -116,6 +115,12 @@ export function RefinementLadder({
 
 export function TriagePendingWork({ pullRequest }: { pullRequest: TriagePullRequest }) {
   const { triagePreferences } = useClientSettings();
+  if (pullRequest.pendingActions === undefined)
+    return (
+      <span className="text-xs text-muted-foreground">
+        Update this environment's fork server for action ownership and Slack copy.
+      </span>
+    );
   const actions = effectiveTriageActions(pullRequest, triagePreferences);
   return (
     <span className="flex flex-col gap-0.5 text-xs text-muted-foreground">
@@ -186,9 +191,19 @@ export function focusTriageRowSoon(pullRequest: Pick<TriagePullRequest, "key">) 
   });
 }
 
-export function StatusBadge({ status }: { status: TriageStatus }) {
+export function StatusBadge({
+  status,
+  mergeQueued,
+}: {
+  status: TriageStatus;
+  mergeQueued?: boolean | undefined;
+}) {
   const presentation = STATUS_PRESENTATION[status];
-  return <Badge variant={presentation.variant}>{presentation.label}</Badge>;
+  return (
+    <Badge variant={presentation.variant}>
+      {mergeQueued && status === "waiting-ci" ? "Waiting in merge queue" : presentation.label}
+    </Badge>
+  );
 }
 
 export function TriageRow({
@@ -225,7 +240,7 @@ export function TriageRow({
               {repository}#{number}
             </span>
             <span className="ms-auto flex shrink-0 items-center gap-2">
-              <StatusBadge status={pullRequest.status} />
+              <StatusBadge status={pullRequest.status} mergeQueued={pullRequest.mergeQueued} />
               <RefinementLadder
                 refinement={pullRequest.refinement}
                 evidence={pullRequest.refinementEvidence}

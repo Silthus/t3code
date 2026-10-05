@@ -46,6 +46,7 @@ export type TriageClassification = Pick<
   | "signals"
   | "openQuestions"
   | "refinement"
+  | "mergeQueued"
   | "pendingActions"
   | "waiting"
   | "refinementEvidence"
@@ -90,6 +91,7 @@ export function classifyTriage(
     openQuestions: openQuestionsOf(reading),
     refinement: refinementOf(facts, viewer),
     ...pendingWork(reading),
+    mergeQueued: facts.mergeQueued ?? false,
     refinementEvidence: refinementEvidenceOf(facts, viewer),
     counts: countsOf(facts),
   };
@@ -154,7 +156,7 @@ function statusStep(reading: PullRequestReading): StatusStep {
   }
   if (facts.mergeQueued)
     return {
-      status: "waiting-merge",
+      status: "waiting-ci",
       nextAction: "Wait in the merge queue",
       reasons: ["PR is in the merge queue"],
     };
@@ -249,8 +251,6 @@ function turnOf(reading: PullRequestReading, { status, nextAction: keep }: Statu
       };
     case "ready-to-merge":
       return { group: "ready-to-merge", nextAction: keep };
-    case "waiting-merge":
-      return { group: "waiting-on-others", nextAction: keep };
     case "waiting-ci-authorization":
       return { group: "waiting-on-others", nextAction: keep };
     case "waiting-ci":
@@ -426,13 +426,17 @@ function pendingWork(reading: PullRequestReading) {
     );
   }
   if (botWaiting > 0) add("judge-bots", `Judge ${plural(botWaiting, "unanswered bot finding")}`);
-  if (facts.ci.state === "cancelled") add("rerun-ci", "Re-run cancelled CI");
-  if (facts.ci.state === "pending" || facts.ci.state === "none")
+  if (facts.ci.cancelled.length > 0 || facts.ci.state === "cancelled")
+    add("rerun-ci", "Re-run cancelled CI");
+  if (facts.ci.pending.length > 0 || facts.ci.state === "pending" || facts.ci.state === "none")
     waiting.push(
-      facts.ci.state === "pending" ? "Waiting for CI to finish" : "Waiting for check results",
+      facts.ci.pending.length > 0 || facts.ci.state === "pending"
+        ? "Waiting for CI to finish"
+        : "Waiting for check results",
     );
+  if (facts.ci.awaitingAuthorization > 0 || facts.ci.state === "awaiting-authorization")
+    add("authorize-ci", "Authorize the CI run");
   if (!facts.isDraft) {
-    if (facts.ci.state === "awaiting-authorization") add("authorize-ci", "Authorize the CI run");
     if (reReview) add("review", `Re-review the PR: ${facts.requestedReviewers.join(", ")}`);
     else if (
       facts.review !== "approved" &&

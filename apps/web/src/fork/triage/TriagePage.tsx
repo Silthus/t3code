@@ -172,7 +172,33 @@ function TriageBody({
       <p className="text-sm text-muted-foreground">Loading pull requests…</p>
     ) : null;
   }
-  return report.fetchedAt !== null ? <TriageGroups groups={groups} selection={selection} /> : null;
+  if (report.fetchedAt === null) return null;
+  const legacy = report.pullRequests.filter((pr) => pr.pendingActions === undefined);
+  return (
+    <>
+      {legacy.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <p role="status" className="text-sm text-muted-foreground">
+            Action ownership needs an updated fork server. Update this environment to use the author
+            queues and Slack copy.
+          </p>
+          <ul className="flex flex-col">
+            {legacy.map((pullRequest) => (
+              <TriageRow
+                key={`${pullRequest.key.repository}#${pullRequest.key.number}`}
+                pullRequest={pullRequest}
+                selected={isSelectedPullRequest(pullRequest, selection.search)}
+                onSelect={selection.select}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {groups.length > 0 || legacy.length === 0 ? (
+        <TriageGroups groups={groups} selection={selection} />
+      ) : null}
+    </>
+  );
 }
 
 function TriageHeader({

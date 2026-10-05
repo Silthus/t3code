@@ -452,7 +452,8 @@ it.effect("projects structured merge queue membership into a non-executable wait
   return Effect.gen(function* () {
     const current = yield* report();
     const pr = pullRequest(current, node.number);
-    assert.strictEqual(pr.status, "waiting-merge");
+    assert.strictEqual(pr.status, "waiting-ci");
+    assert.strictEqual(pr.mergeQueued, true);
     assert.deepEqual(pr.pendingActions, []);
     assert.deepEqual(pr.waiting, ["Waiting in the merge queue"]);
   }).pipe(Effect.provide(layer));

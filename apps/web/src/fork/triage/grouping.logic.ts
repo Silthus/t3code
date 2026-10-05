@@ -52,7 +52,7 @@ export function groupTriagePullRequests(
     .map((group) => ({
       group,
       pullRequests: pullRequests
-        .filter((pr) => groupOf(pr) === group)
+        .filter((pr) => pr.pendingActions !== undefined && groupOf(pr) === group)
         .toSorted(compareTriagePullRequests),
     }))
     .filter((entry) => entry.pullRequests.length > 0);

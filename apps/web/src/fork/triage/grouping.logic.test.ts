@@ -56,3 +56,9 @@ describe("author queues", () => {
     expect(groupTriagePullRequests([])).toEqual([]);
   });
 });
+
+it("does not invent an empty team queue for older reports without action facts", () => {
+  expect(
+    groupTriagePullRequests([pr(1, undefined, { group: "needs-you", status: "blocked" })]),
+  ).toEqual([]);
+});

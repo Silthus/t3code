@@ -607,7 +607,10 @@ it("uses active thread facts rather than broad counts and treats requested re-re
 });
 
 it("reports a queued merge as waiting rather than ready to merge", () => {
-  expect(classify({ review: "approved", mergeQueued: true }).status).toBe("waiting-merge");
+  expect(classify({ review: "approved", mergeQueued: true })).toMatchObject({
+    status: "waiting-ci",
+    mergeQueued: true,
+  });
 });
 
 it("preserves requested team re-review alongside author blockers", () => {
@@ -630,5 +633,27 @@ it("makes merge queue removal an investigation rather than an empty blocked PR",
     classify({ review: "approved", trunk: { managed: true, failed: true, message: "Removed" } }),
   ).toMatchObject({
     pendingActions: [{ kind: "merge-queue", label: "Investigate merge queue removal" }],
+  });
+});
+
+it("keeps independent authorization, cancelled runs and running checks visible alongside failing CI", () => {
+  expect(
+    classify({
+      ci: ci({
+        state: "failing",
+        failing: ["unit"],
+        cancelled: ["lint"],
+        pending: ["integration"],
+        awaitingAuthorization: 2,
+      }),
+    }),
+  ).toMatchObject({
+    pendingActions: [
+      { kind: "fix-ci", label: "Fix failing CI: unit" },
+      { kind: "rerun-ci", label: "Re-run cancelled CI" },
+      { kind: "authorize-ci", label: "Authorize the CI run" },
+      { kind: "review", label: "Review the PR" },
+    ],
+    waiting: ["Waiting for CI to finish"],
   });
 });
