@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
