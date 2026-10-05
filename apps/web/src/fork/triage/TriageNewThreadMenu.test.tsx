@@ -133,8 +133,10 @@ beforeEach(() => {
     draftThreadsByThreadKey: {},
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
   });
-  state.openDraft.mockReset().mockImplementation(async (projectRef) => {
-    useComposerDraftStore.getState().setProjectDraftThreadId(projectRef, draftId, { threadId });
+  state.openDraft.mockReset().mockImplementation(async (projectRef, options) => {
+    useComposerDraftStore
+      .getState()
+      .setProjectDraftThreadId(projectRef, draftId, { threadId, ...options });
     return { draftId, threadId };
   });
   state.prepareCheckout.mockReset().mockResolvedValue({

@@ -69,10 +69,10 @@ beforeEach(() => {
     draftThreadsByThreadKey: {},
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
   });
-  openDraft.mockReset().mockImplementation(async () => {
+  openDraft.mockReset().mockImplementation(async (_projectRef, options) => {
     useComposerDraftStore
       .getState()
-      .setProjectDraftThreadId({ environmentId, projectId }, draftId, { threadId });
+      .setProjectDraftThreadId({ environmentId, projectId }, draftId, { threadId, ...options });
     return { draftId, threadId };
   });
   startedCheckout = new Promise((started) => {
@@ -114,7 +114,7 @@ describe("starting a triage draft", () => {
       id: ProjectId.make("remote-app"),
       workspaceRoot: "/devbox/app",
     };
-    openDraft.mockImplementation(async (projectRef) => {
+    openDraft.mockImplementation(async (projectRef, options) => {
       const target = projectRef.environmentId === local.environmentId ? local : remote;
       useComposerDraftStore
         .getState()
@@ -123,6 +123,7 @@ describe("starting a triage draft", () => {
           branch: null,
           worktreePath: null,
           envMode: "local",
+          ...options,
         });
       return { draftId, threadId };
     });

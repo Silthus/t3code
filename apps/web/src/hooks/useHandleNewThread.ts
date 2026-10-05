@@ -40,6 +40,8 @@ interface NewThreadWorkspaceOptions {
   worktreePath?: string | null;
   envMode?: DraftThreadEnvMode;
   startFromOrigin?: boolean;
+  environmentSelection?: "auto" | "manual";
+  loadBalancedEnvironmentId?: ScopedProjectRef["environmentId"] | null;
 }
 
 // The workspace options the caller passed explicitly, shaped for the draft
@@ -51,6 +53,12 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
     ...(options?.worktreePath !== undefined ? { worktreePath: options.worktreePath } : {}),
     ...(options?.envMode !== undefined ? { envMode: options.envMode } : {}),
     ...(options?.startFromOrigin !== undefined ? { startFromOrigin: options.startFromOrigin } : {}),
+    ...(options?.environmentSelection !== undefined
+      ? { environmentSelection: options.environmentSelection }
+      : {}),
+    ...(options?.loadBalancedEnvironmentId !== undefined
+      ? { loadBalancedEnvironmentId: options.loadBalancedEnvironmentId }
+      : {}),
   };
 }
 
@@ -66,13 +74,7 @@ export function useNewThreadHandler() {
   return useCallback(
     (
       projectRef: ScopedProjectRef,
-      options?: {
-        branch?: string | null;
-        worktreePath?: string | null;
-        envMode?: DraftThreadEnvMode;
-        startFromOrigin?: boolean;
-        replace?: boolean;
-      },
+      options?: NewThreadWorkspaceOptions & { replace?: boolean },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
@@ -168,6 +170,9 @@ export function useNewThreadHandler() {
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+      const hasRoutingOption =
+        options?.environmentSelection !== undefined ||
+        options?.loadBalancedEnvironmentId !== undefined;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -207,7 +212,8 @@ export function useNewThreadHandler() {
             hasBranchOption ||
             hasWorktreePathOption ||
             hasEnvModeOption ||
-            hasStartFromOriginOption;
+            hasStartFromOriginOption ||
+            hasRoutingOption;
           // Resurrecting an empty stored draft must not resurrect its stale
           // context: explicit workspace options win outright; otherwise the
           // env context resets to the configured defaults so drafts seeded
@@ -339,7 +345,8 @@ export function useNewThreadHandler() {
           hasBranchOption ||
           hasWorktreePathOption ||
           hasEnvModeOption ||
-          hasStartFromOriginOption
+          hasStartFromOriginOption ||
+          hasRoutingOption
         ) {
           setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
         }
@@ -414,6 +421,7 @@ export function useNewThreadHandler() {
             }),
           runtimeMode: defaultRuntimeMode,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+          ...pickExplicitWorkspaceOptions(options),
         });
         applyStickyState(draftId);
         const modelSelectionOverride = resolveModelSelectionOverride(draftId);
