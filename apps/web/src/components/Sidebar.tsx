@@ -549,11 +549,12 @@ function SnoozeMenuButton(props: {
   timestampFormat: TimestampFormat;
 }) {
   const { open, onOpenChange, onSnooze, timestampFormat } = props;
+  const snoozeMorningHour = useClientSettings((s) => s.snoozeMorningHour);
   // Presets resolve at open time so "In 1 hour" is relative to the click,
   // not to when the row mounted.
   const presets = useMemo(
-    () => (open ? resolveSnoozePresets(new Date(), timestampFormat) : []),
-    [open, timestampFormat],
+    () => (open ? resolveSnoozePresets(new Date(), timestampFormat, snoozeMorningHour) : []),
+    [open, timestampFormat, snoozeMorningHour],
   );
   return (
     <Menu open={open} onOpenChange={onOpenChange}>
@@ -2332,6 +2333,7 @@ export default function Sidebar() {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const snoozeMorningHour = useClientSettings((s) => s.snoozeMorningHour);
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
@@ -4201,7 +4203,7 @@ export default function Sidebar() {
       const unpinMenuItem = buildBulkUnpinContextMenuItem({
         pinnedCount: pinnedSelectedThreads.length,
       });
-      const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+      const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat, snoozeMorningHour);
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
@@ -4366,6 +4368,7 @@ export default function Sidebar() {
       settleThreads,
       updateThreadMetadata,
       timestampFormat,
+      snoozeMorningHour,
     ],
   );
 
@@ -4456,7 +4459,7 @@ export default function Sidebar() {
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
-        const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat, snoozeMorningHour);
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -4704,6 +4707,7 @@ export default function Sidebar() {
       startThreadRename,
       updateThreadMetadata,
       timestampFormat,
+      snoozeMorningHour,
     ],
   );
 
