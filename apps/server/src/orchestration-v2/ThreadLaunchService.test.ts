@@ -2302,10 +2302,12 @@ it.effect("refuses a protected project before worktree mutation or provider rele
       ),
     );
   }).pipe(
-    Effect.provide(harness.layer),
     Effect.provide(
-      ConfigProvider.layer(
-        ConfigProvider.fromEnv({ env: { T3CODE_WORKSPACE_DENY_ROOTS: '["/repo"]' } }),
+      Layer.mergeAll(
+        harness.layer,
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { T3CODE_WORKSPACE_DENY_ROOTS: '["/repo"]' } }),
+        ),
       ),
     ),
   );
