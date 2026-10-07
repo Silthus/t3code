@@ -1006,6 +1006,64 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
   );
 
+  it.effect("distinguishes a durable budget refusal from a missing child result", () =>
+    Effect.gen(function* () {
+      let budgetRefusal = true;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: () => Effect.succeed(parentProjection([])),
+          dispatch: () =>
+            Effect.succeed({
+              sequence: 1,
+              storedEvents: budgetRefusal
+                ? [
+                    {
+                      sequence: 1,
+                      commandId: null,
+                      event: {
+                        type: "runtime-request.updated",
+                        payload: { id: "context-budget:refused", status: "pending" },
+                      },
+                    },
+                  ]
+                : [],
+            } as never),
+        }),
+        providerRegistryLayer([
+          providerSnapshot({
+            instanceId: codexInstanceId,
+            driver: ProviderDriverKind.make("codex"),
+            model: "gpt-5.4",
+          }),
+        ]),
+        adapterRegistryLayer([codexInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const delegate = () =>
+          service
+            .delegateTask(scope, {
+              task: "Implement the next task",
+              target: { providerInstanceId: codexInstanceId, model: "gpt-5.4" },
+              mode: "async",
+              clientRequestId: "refused-dispatch",
+            })
+            .pipe(Effect.flip);
+        const refused = yield* delegate();
+        assert.equal(refused.code, "context_budget_reached");
+        assert.include(refused.message, "new clientRequestId");
+        budgetRefusal = false;
+        const missing = yield* delegate();
+        assert.equal(missing.code, "orchestration_error");
+        assert.notInclude(missing.message, "context budget");
+      }).pipe(Effect.provide(OrchestratorMcpService.layer.pipe(Layer.provide(layerDependencies))));
+    }),
+  );
+
   it.effect(
     "delegates to an Antigravity instance whose adapter resolves through the registry",
     () =>

@@ -3,6 +3,7 @@ import {
   RuntimeRequestId,
   TurnItemId,
   type CommandId,
+  type RunId,
   EventId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
@@ -37,6 +38,8 @@ export function contextBudgetRequestEvents(input: {
     OrchestrationV2ThreadProjection,
     "thread" | "providerThreads" | "providerTurns" | "attempts" | "runs" | "runtimeRequests"
   >;
+  readonly runId: RunId;
+  readonly ordinal: number;
   readonly commandId: CommandId;
   readonly now: DateTime.Utc;
 }): Array<OrchestrationV2DomainEvent> | undefined {
@@ -84,7 +87,7 @@ export function contextBudgetRequestEvents(input: {
       payload: {
         id: nodeId,
         threadId,
-        runId: null,
+        runId: input.runId,
         parentNodeId: null,
         rootNodeId: nodeId,
         kind: "user_input_request",
@@ -106,13 +109,13 @@ export function contextBudgetRequestEvents(input: {
       payload: {
         id: TurnItemId.make(`context-budget:${input.commandId}`),
         threadId,
-        runId: null,
+        runId: input.runId,
         nodeId,
         providerThreadId: null,
         providerTurnId: null,
         nativeItemRef: null,
         parentItemId: null,
-        ordinal: 0,
+        ordinal: input.ordinal,
         status: "waiting",
         title: "Context budget reached",
         startedAt: input.now,
@@ -126,7 +129,7 @@ export function contextBudgetRequestEvents(input: {
             header: "Handoff",
             required: true,
             allowCustomAnswer: true,
-            question: `The provider reports ${context.usage.usedTokens} context tokens, reaching this thread's ${budget} token budget. New child dispatch is paused. Save a durable handoff with accepted tasks, decisions, pending child identities, review state and verified artifact paths. Continue through a thread fork under the human's current model selection, or explicitly raise/disable the budget. Existing work remains running and its durable state stays in this thread. How should work continue?`,
+            question: `The provider reports ${context.usage.usedTokens} context tokens, reaching this thread's ${budget} token budget. New child dispatch is paused. Save a durable handoff with accepted tasks, decisions, pending child identities, review state and verified artifact paths. Summarize the handoff into a fresh continuation under the human's current model selection, or explicitly raise/disable the budget with t3_thread_update action context_budget. A refused dispatch is final for its clientRequestId; use a new clientRequestId after recovery. Existing work remains running and its durable state stays in this thread. How should work continue?`,
             options: [],
           },
         ],

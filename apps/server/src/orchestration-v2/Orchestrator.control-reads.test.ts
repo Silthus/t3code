@@ -24,6 +24,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import { currentContextUsage } from "./ContextBudgetGuard.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import type { ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -707,6 +708,11 @@ it.effect(
             item.type === "user_input_request" && item.questions[0]?.id === "context_handoff",
         ),
       );
+      const handoffItem = after.turnItems.find((item) => item.type === "user_input_request")!;
+      assert.isAbove(
+        handoffItem.ordinal,
+        Math.max(...before.turnItems.map((item) => item.ordinal)),
+      );
       yield* delegate("budget:retry-blocked-child");
       assert.equal((yield* projections.getThreadProjection(threadId)).runtimeRequests.length, 1);
       yield* projections.apply({
@@ -736,8 +742,15 @@ it.effect(
           (request) => request.status === "pending",
         ),
       );
+      const replay = yield* delegate("budget:blocked-child");
+      assert.isFalse(replay.storedEvents.some(({ event }) => event.type === "subagent.updated"));
       yield* delegate("budget:off-child");
-      assert.equal((yield* projections.getThreadProjection(threadId)).subagents.length, 3);
+      const resumed = yield* projections.getThreadProjection(threadId);
+      assert.equal(resumed.subagents.length, 3);
+      const unknownChild = yield* projections.getThreadProjection(
+        resumed.subagents[1]!.childThreadId!,
+      );
+      assert.isNull(unknownChild.thread.contextBudgetTokens);
     }).pipe(Effect.provide(layerTest)),
 );
 
@@ -772,5 +785,117 @@ it.effect("reads current context evidence without hydrating historical provider 
     assert.isEmpty(evidence.providerTurns);
     assert.isEmpty(evidence.attempts);
     assert.isEmpty(evidence.providerThreads);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads the latest matched native context report from the bounded projection", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:native-context");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("native:create"),
+      threadId,
+      projectId: ProjectId.make("native:project"),
+      title: "Native context",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("native:start"),
+      threadId,
+      messageId: MessageId.make("native:message"),
+      text: "Accepted plan",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const projection = yield* projections.getThreadProjection(threadId);
+    const run = projection.runs[0]!;
+    const provider = projection.providerThreads[0]!;
+    const now = yield* DateTime.now;
+    yield* projections.apply({
+      id: EventId.make("native:provider"),
+      type: "provider-thread.updated",
+      threadId,
+      occurredAt: now,
+      payload: {
+        ...provider,
+        nativeThreadRef: { driver: adapter.driver, strength: "strong", nativeId: "native:current" },
+        contextUsage: { usedTokens: 10 },
+      },
+    });
+    for (const [suffix, nativeThreadId, usedTokens] of [
+      ["matched", "native:current", 200_000],
+      ["stale", "native:old", 999_999],
+    ] as const) {
+      const attemptId = RunAttemptId.make(`native:${suffix}`);
+      const turnId = ProviderTurnId.make(`native:${suffix}`);
+      yield* projections.apply({
+        id: EventId.make(`native:attempt:${suffix}`),
+        type: "run-attempt.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: attemptId,
+          runId: run.id,
+          attemptOrdinal: suffix === "matched" ? 2 : 3,
+          rootNodeId: run.rootNodeId!,
+          providerInstanceId: instanceId,
+          providerThreadId: provider.id,
+          providerTurnId: turnId,
+          nativeThreadId,
+          reason: "initial",
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+        },
+      });
+      yield* projections.apply({
+        id: EventId.make(`native:turn:${suffix}`),
+        type: "provider-turn.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: turnId,
+          providerThreadId: provider.id,
+          nodeId: run.rootNodeId!,
+          runAttemptId: attemptId,
+          nativeTurnRef: null,
+          ordinal: suffix === "matched" ? 1 : 2,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+          tokenUsage: {
+            usedTokens,
+            maxTokens: 1_000_000,
+            updatedAt:
+              suffix === "matched" ? "2026-01-01T00:00:00.000Z" : "2026-01-02T00:00:00.000Z",
+          },
+        },
+      });
+    }
+    const bounded = yield* projections.getThreadRecords(
+      threadId,
+      ["providerThreads", "providerTurns", "attempts", "runs"],
+      { currentContextOnly: true },
+    );
+    assert.equal(bounded.providerTurns.length, 1);
+    assert.equal(bounded.attempts.length, 1);
+    assert.deepEqual(currentContextUsage(bounded), {
+      usage: { usedTokens: 200_000, maxTokens: 1_000_000 },
+      providerThreadId: provider.id,
+      nativeThreadId: "native:current",
+      source: "provider_turn",
+      reportedAt: "2026-01-01T00:00:00.000Z",
+    });
   }).pipe(Effect.provide(layerTest)),
 );

@@ -1,4 +1,3 @@
-import { currentContextUsage } from "../orchestration-v2/ContextBudgetGuard.ts";
 import {
   CommandId,
   type RunId,
@@ -80,6 +79,7 @@ import {
   DispatchModeLimit,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
+import { currentContextUsage } from "../orchestration-v2/ContextBudgetGuard.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -1866,9 +1866,16 @@ const make = Effect.gen(function* () {
             stored.event.type === "subagent.updated" && stored.event.payload.origin === "app_owned",
         );
         if (taskEvent?.event.type !== "subagent.updated") {
+          const budgetRefusal = result.storedEvents.some(
+            ({ event }) =>
+              event.type === "runtime-request.updated" &&
+              event.payload.id.startsWith("context-budget:"),
+          );
           return yield* failure(
-            "orchestration_error",
-            "New child dispatch is paused by this thread's context budget. Save a durable handoff and continue through a thread fork under the human's current model selection, or explicitly raise/disable the budget. Existing children remain running. Read the pending context_handoff request with t3_thread_read.",
+            budgetRefusal ? "context_budget_reached" : "orchestration_error",
+            budgetRefusal
+              ? "This dispatch was refused by the thread's context budget. Read the durable context_handoff request with t3_thread_read and summarize a handoff into a fresh continuation under the human's current model selection, or explicitly raise/disable the budget with t3_thread_update action context_budget. Existing children remain running. After recovery, use a new clientRequestId; this refused request is final for its original key."
+              : "Delegated task dispatch completed without a child task result.",
           );
         }
         const taskId = taskEvent.event.payload.id;

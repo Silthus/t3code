@@ -1666,6 +1666,9 @@ function shellFromState(input: {
     id: input.state.thread.id,
     projectId: input.state.thread.projectId,
     title: input.state.thread.title,
+    ...(input.state.thread.contextBudgetTokens === undefined
+      ? {}
+      : { contextBudgetTokens: input.state.thread.contextBudgetTokens }),
     providerInstanceId: input.state.thread.providerInstanceId,
     modelSelection: input.state.thread.modelSelection,
     runtimeMode: input.state.thread.runtimeMode,

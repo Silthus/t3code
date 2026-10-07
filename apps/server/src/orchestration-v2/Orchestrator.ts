@@ -6476,15 +6476,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
     ) {
       const parentProjection = yield* projectionStore
-        .getThreadRecords(command.parentThreadId, [
-          "runs",
-          "nodes",
-          "subagents",
-          "providerThreads",
-          "providerTurns",
-          "attempts",
-          "runtimeRequests",
-        ])
+        .getThreadRecords(
+          command.parentThreadId,
+          [
+            "runs",
+            "nodes",
+            "subagents",
+            "providerThreads",
+            "providerTurns",
+            "attempts",
+            "runtimeRequests",
+          ],
+          { currentContextOnly: true },
+        )
         .pipe(
           Effect.mapError(
             (cause) =>
@@ -6527,6 +6531,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
 
       const budgetEvents = contextBudgetRequestEvents({
+        runId: parentRun.id,
+        ordinal: yield* nextTurnItemOrdinal(parentProjection),
         projection: parentProjection,
         commandId: command.commandId,
         now: command.createdAt ?? (yield* DateTime.now),
