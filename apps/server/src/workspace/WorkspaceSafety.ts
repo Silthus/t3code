@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Path from "effect/Path";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
@@ -21,6 +24,7 @@ export class WorkspaceSafetyError extends Schema.TaggedError<WorkspaceSafetyErro
       case "configuration":
         return "T3CODE_WORKSPACE_DENY_ROOTS must be a JSON array of absolute directory paths.";
       case "inspection":
+        if (this.workspaceRoot === null) return "Choose a workspace root before retrying.";
         return "Workspace safety could not inspect the workspace or its Git metadata. Check filesystem permissions and repair the checkout before retrying.";
     }
   }
@@ -42,6 +46,7 @@ export class WorkspaceSafety extends Context.Service<
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcessPlatform;
   const assertAllowed = Effect.fn("WorkspaceSafety.assertAllowed")(function* (
     workspaceRoot: string | null,
   ) {
@@ -65,10 +70,29 @@ const make = Effect.gen(function* () {
     if (deniedRoots.length === 0) return;
     if (workspaceRoot === null)
       return yield* new WorkspaceSafetyError({ workspaceRoot, reason: "inspection" });
+    const realPath = (
+      candidate: string,
+    ): Effect.Effect<string, import("effect/PlatformError").PlatformError | WorkspaceSafetyError> =>
+      fs.realPath(candidate).pipe(
+        Effect.flatMap((resolved) =>
+          platform === "darwin" || platform === "win32"
+            ? Effect.tryPromise({
+                try: () =>
+                  new Promise<string>((resolve, reject) =>
+                    NodeFS.realpath.native(resolved, (error, canonical) =>
+                      error ? reject(error) : resolve(canonical),
+                    ),
+                  ),
+                catch: (cause) =>
+                  new WorkspaceSafetyError({ workspaceRoot, reason: "inspection", cause }),
+              })
+            : Effect.succeed(resolved),
+        ),
+      );
     const canonicalPath = (
       candidate: string,
-    ): Effect.Effect<string, import("effect/PlatformError").PlatformError> =>
-      fs.realPath(candidate).pipe(
+    ): Effect.Effect<string, import("effect/PlatformError").PlatformError | WorkspaceSafetyError> =>
+      realPath(candidate).pipe(
         Effect.catchTags({
           PlatformError: (error) =>
             error.reason._tag === "NotFound" && path.dirname(candidate) !== candidate
@@ -107,13 +131,13 @@ const make = Effect.gen(function* () {
         );
         if (stat !== null) {
           let gitDirectory: string;
-          if (stat.type === "Directory") gitDirectory = yield* fs.realPath(marker);
+          if (stat.type === "Directory") gitDirectory = yield* realPath(marker);
           else {
             const contents = yield* fs.readFileString(marker);
             const gitdir = /^gitdir: (.+)\s*$/u.exec(contents)?.[1]?.trim();
             if (!gitdir)
               return yield* new WorkspaceSafetyError({ workspaceRoot, reason: "inspection" });
-            gitDirectory = yield* fs.realPath(path.resolve(directory, gitdir));
+            gitDirectory = yield* realPath(path.resolve(directory, gitdir));
           }
           yield* assertOutside(gitDirectory);
           const common = yield* fs.readFileString(path.join(gitDirectory, "commondir")).pipe(
@@ -123,7 +147,7 @@ const make = Effect.gen(function* () {
             }),
           );
           if (common !== null)
-            yield* assertOutside(yield* fs.realPath(path.resolve(gitDirectory, common.trim())));
+            yield* assertOutside(yield* realPath(path.resolve(gitDirectory, common.trim())));
           return;
         }
         const parent = path.dirname(directory);

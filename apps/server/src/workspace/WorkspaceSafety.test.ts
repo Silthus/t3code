@@ -79,3 +79,53 @@ it.effect(
       ),
     ),
 );
+
+it.effect("refuses filesystem case aliases when the filesystem supports them", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const safety = yield* WorkspaceSafety.WorkspaceSafety;
+    const base = yield* fs.makeTempDirectoryScoped({ prefix: "t3-case-policy-" });
+    const root = path.join(base, "Templates");
+    const alias = path.join(base, "templates");
+    yield* fs.makeDirectory(root);
+    if (!(yield* fs.exists(alias))) return;
+    const result = yield* safety.assertAllowed(path.join(alias, "not-created")).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([root]),
+            },
+          }),
+        ),
+      ),
+      Effect.result,
+    );
+    assert.equal(result._tag, "Failure");
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(WorkspaceSafety.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+  ),
+);
+
+it.effect("asks for a workspace when policy is enabled without a root", () =>
+  Effect.gen(function* () {
+    const safety = yield* WorkspaceSafety.WorkspaceSafety;
+    const failure = yield* safety.assertAllowed(null).pipe(Effect.flip);
+    assert.match(failure.message, /Choose a workspace root/);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        WorkspaceSafety.layer.pipe(Layer.provide(NodeServices.layer)),
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_WORKSPACE_DENY_ROOTS: '["/tmp/protected"]',
+            },
+          }),
+        ),
+      ),
+    ),
+  ),
+);

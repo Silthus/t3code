@@ -1,3 +1,4 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
@@ -898,6 +899,7 @@ const collectOutput = Effect.fnUntraced(function* (
 export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const { worktreesDir } = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
@@ -3368,6 +3370,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       worktreePath = path.join(parentDir, repoName, sanitizedBranch);
     }
+    for (const cwd of [input.cwd, worktreePath]) {
+      yield* workspaceSafety.assertAllowed(cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.createWorktree",
+              command: "git worktree add",
+              cwd: input.cwd,
+              detail: cause.message,
+              cause,
+            }),
+        ),
+      );
+    }
     const args = input.newRefName
       ? ["worktree", "add", "-b", input.newRefName, worktreePath, input.refName]
       : ["worktree", "add", worktreePath, input.refName];
@@ -4046,4 +4062,4 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     listLocalBranchNames,
     listWorktreePaths,
   });
-});
+}, Effect.provide(WorkspaceSafety.layer));

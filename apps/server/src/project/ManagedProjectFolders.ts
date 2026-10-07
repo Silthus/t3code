@@ -1,3 +1,4 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 /**
  * ManagedProjectFolders - the project folders T3 Code makes for the user under
  * its data dir, rather than ones the user picks:
@@ -223,6 +224,7 @@ function describeCommitFailure(stderr: string): string {
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
+  const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
   const path = yield* Path.Path;
   const gitWorkflow = yield* GitWorkflow.GitWorkflowService;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -239,11 +241,17 @@ const make = Effect.gen(function* () {
    */
   const claimFreeFolder = Effect.fnUntraced(function* <E>(
     folderFor: (attempt: number) => Effect.Effect<Option.Option<string>, E>,
-    onError: (folder: string, cause: PlatformError.PlatformError) => E,
+    onError: (
+      folder: string,
+      cause: PlatformError.PlatformError | WorkspaceSafety.WorkspaceSafetyError,
+    ) => E,
   ) {
     for (let attempt = 1; ; attempt++) {
       const folder = yield* folderFor(attempt);
       if (Option.isNone(folder)) return folder;
+      yield* workspaceSafety
+        .assertAllowed(folder.value)
+        .pipe(Effect.mapError((cause) => onError(folder.value, cause)));
       const claimed = yield* fileSystem.makeDirectory(folder.value).pipe(
         Effect.as(true),
         Effect.catchIf(
@@ -275,9 +283,10 @@ const make = Effect.gen(function* () {
   const scratchRoot = probe.pipe(Effect.onInterrupt(() => invalidate));
 
   const makeScratchFolder = (folder: string) =>
-    fileSystem
-      .makeDirectory(folder, { recursive: true })
-      .pipe(Effect.mapError((cause) => new ScratchFolderError({ folder, cause })));
+    workspaceSafety.assertAllowed(folder).pipe(
+      Effect.andThen(fileSystem.makeDirectory(folder, { recursive: true })),
+      Effect.mapError((cause) => new ScratchFolderError({ folder, cause })),
+    );
 
   const ensureScratchProject: ManagedProjectFolders["Service"]["ensureScratchProject"] = Effect.gen(
     function* () {
@@ -507,4 +516,6 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(ManagedProjectFolders, make);
+export const layer = Layer.effect(ManagedProjectFolders, make).pipe(
+  Layer.provide(WorkspaceSafety.layer),
+);

@@ -1,3 +1,4 @@
+import * as ConfigProvider from "effect/ConfigProvider";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, GitCommandError, ProjectId, ThreadId } from "@t3tools/contracts";
@@ -568,5 +569,37 @@ it.effect("removes the folder when the repository cannot be made", () =>
           ),
       }),
     },
+  ),
+);
+
+it.effect("refuses a protected Scratch root before recreating or claiming folders", () =>
+  withScratch(() =>
+    Effect.gen(function* () {
+      const scratch = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const fs = yield* FileSystem.FileSystem;
+      const { projectId } = yield* scratch.ensureScratchProject;
+      const root = yield* requireRoot;
+      yield* fs.remove(root, { recursive: true });
+      const result = yield* scratch
+        .folderForThread({
+          projectId,
+          threadId: ThreadId.make("thread:protected-scratch"),
+          text: "Start",
+        })
+        .pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([root]),
+                },
+              }),
+            ),
+          ),
+          Effect.result,
+        );
+      assert.equal(result._tag, "Failure");
+      assert.isFalse(yield* fs.exists(root));
+    }),
   ),
 );

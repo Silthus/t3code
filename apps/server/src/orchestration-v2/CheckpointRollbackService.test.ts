@@ -1,3 +1,4 @@
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import {
@@ -507,3 +508,85 @@ it.effect.skipIf(!symlinksSupported)(
       assert.isFalse(isolated);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
+
+it.effect("refuses protected rollback before opening a provider or restoring files", () => {
+  const threadId = ThreadId.make("thread:rollback-provider-turn-unavailable");
+  const providerThreadId = ProviderThreadId.make(
+    "provider-thread:rollback-provider-turn-unavailable",
+  );
+  const providerSessionId = ProviderSessionId.make(
+    "provider-session:rollback-provider-turn-unavailable",
+  );
+  const checkpointId = CheckpointId.make("checkpoint:rollback-provider-turn-unavailable");
+  const scopeId = CheckpointScopeId.make("checkpoint-scope:rollback-provider-turn-unavailable");
+  const providerInstanceId = ProviderInstanceId.make("provider_rollback_provider_turn_unavailable");
+  const open = vi.fn(() => Effect.die("provider must not open"));
+  const restore = vi.fn(() => Effect.die("checkpoint restore must not run"));
+  const projection = {
+    thread: {
+      worktreePath: "/tmp/protected-rollback",
+      activeProviderThreadId: providerThreadId,
+      modelSelection: { instanceId: providerInstanceId, model: "test-model" },
+    },
+    providerThreads: [{ id: providerThreadId, providerSessionId, providerInstanceId }],
+    providerSessions: [],
+    checkpoints: [{ id: checkpointId, scopeId, status: "ready", appRunOrdinal: 0 }],
+    checkpointScopes: [{ id: scopeId, cwd: "/tmp/protected-rollback" }],
+    runs: [],
+    attempts: [],
+    providerTurns: [],
+  } as unknown as OrchestrationV2ThreadProjection;
+  const layerTest = layerCheckpointRollbackService.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(CheckpointService.CheckpointServiceV2)({ restore }),
+        Layer.mock(EventSink.EventSinkV2)({}),
+        IdAllocator.layer,
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getThreadRecords: () => Effect.succeed(projection),
+          getShellSnapshot: () =>
+            Effect.succeed({
+              schemaVersion: 1,
+              snapshotSequence: 0,
+              threads: [],
+              archivedThreads: [],
+            }),
+        }),
+        Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+          open,
+        }),
+        Layer.mock(RuntimePolicy.RuntimePolicyV2)({
+          resolve: () => Effect.succeed({ cwd: "/tmp/protected-rollback" } as never),
+        }),
+      ),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+    const error = yield* service
+      .execute({
+        threadId,
+        providerThreadId,
+        checkpointId,
+        scopeId,
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(error.reason, "workspace-safety");
+    assert.match(error.message, /Workspace safety refused/);
+    assert.equal(open.mock.calls.length, 0);
+    assert.equal(restore.mock.calls.length, 0);
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        layerTest,
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { T3CODE_WORKSPACE_DENY_ROOTS: '["/tmp/protected-rollback"]' },
+          }),
+        ),
+      ),
+    ),
+  );
+});

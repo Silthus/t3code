@@ -1,3 +1,4 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import {
   CheckpointId,
   CheckpointScopeId,
@@ -27,6 +28,8 @@ import type { ProviderAdapterV2RollbackTarget } from "./ProviderAdapter.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { RuntimePolicyV2 } from "./RuntimePolicy.ts";
 
+const isWorkspaceSafetyError = Schema.is(WorkspaceSafety.WorkspaceSafetyError);
+
 export const ROLLBACK_FAILED_MESSAGE =
   "The provider could not roll back this conversation. Try again; if it keeps failing, check the provider and server logs.";
 
@@ -39,6 +42,7 @@ export class CheckpointRollbackExecutionError extends Schema.TaggedError<Checkpo
       "provider-turn-unavailable",
       "unexpected-failure",
       "shared-workspace",
+      "workspace-safety",
     ]),
     threadId: ThreadId,
     providerThreadId: ProviderThreadId,
@@ -54,6 +58,10 @@ export class CheckpointRollbackExecutionError extends Schema.TaggedError<Checkpo
         return `Active provider changed before rollback target ${this.checkpointId} could execute on thread ${this.threadId}.`;
       case "provider-turn-unavailable":
         return `Provider turn for rollback target ${this.checkpointId} is unavailable on provider thread ${this.providerThreadId}.`;
+      case "workspace-safety":
+        return isWorkspaceSafetyError(this.cause)
+          ? this.cause.message
+          : "Workspace safety refused checkpoint rollback.";
       case "shared-workspace":
         return SHARED_WORKSPACE_RESTORE_MESSAGE;
       case "unexpected-failure":
@@ -95,6 +103,7 @@ export const layer: Layer.Layer<
   CheckpointRollbackServiceV2,
   Effect.gen(function* () {
     const checkpoints = yield* CheckpointServiceV2;
+    const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
     const eventSink = yield* EventSinkV2;
     const ids = yield* IdAllocatorV2;
     const projections = yield* ProjectionStoreV2;
@@ -155,6 +164,21 @@ export const layer: Layer.Layer<
         });
       }
 
+      const assertWorkspaceAllowed = (cwd: string | null) =>
+        workspaceSafety.assertAllowed(cwd).pipe(
+          Effect.mapError(
+            (cause) =>
+              new CheckpointRollbackExecutionError({
+                reason: "workspace-safety",
+                threadId: input.threadId,
+                providerThreadId: input.providerThreadId,
+                checkpointId: input.checkpointId,
+                cause,
+              }),
+          ),
+        );
+      yield* assertWorkspaceAllowed(scope.cwd);
+
       if (
         input.restoreFiles !== false &&
         !(yield* isCheckpointRestoreIsolated(projection.thread, scope, {
@@ -177,6 +201,7 @@ export const layer: Layer.Layer<
         thread: projection.thread,
         modelSelection,
       });
+      yield* assertWorkspaceAllowed(resolvedRuntimePolicy.cwd);
       const existingSession = projection.providerSessions.find(
         (candidate) => candidate.id === providerThread.providerSessionId,
       );
@@ -358,5 +383,5 @@ export const layer: Layer.Layer<
           ),
         ),
     });
-  }),
+  }).pipe(Effect.provide(WorkspaceSafety.layer)),
 );

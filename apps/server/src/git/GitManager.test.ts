@@ -1,3 +1,4 @@
+import * as ConfigProvider from "effect/ConfigProvider";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -788,6 +789,36 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  it.effect.each(["local", "worktree"] as const)(
+    "refuses protected pull request preparation in %s mode before checkout",
+    (mode) =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir("protected-pr-");
+        yield* initRepo(cwd);
+        NodeFS.writeFileSync(NodePath.join(cwd, "local.txt"), "keep local changes\n");
+        const { manager, ghCalls } = yield* makeManager();
+        const result = yield* manager
+          .preparePullRequestThread({ cwd, reference: "#64", mode })
+          .pipe(
+            Effect.provide(
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: {
+                    T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([cwd]),
+                  },
+                }),
+              ),
+            ),
+            Effect.result,
+          );
+        expect(result._tag).toBe("Failure");
+        expect(ghCalls).toEqual([]);
+        expect(NodeFS.readFileSync(NodePath.join(cwd, "local.txt"), "utf8")).toBe(
+          "keep local changes\n",
+        );
+      }),
+  );
+
   it.effect("passive worktree status streams do not start remote refreshes", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-passive-vcs-");

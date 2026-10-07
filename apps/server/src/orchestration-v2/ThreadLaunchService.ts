@@ -420,6 +420,11 @@ const make = Effect.gen(function* () {
         yield* setupTracker.stageStatus(threadId, "checkout", "done");
       }
 
+      const cwd = worktreePath ?? project.workspaceRoot;
+      yield* workspaceSafety
+        .assertAllowed(cwd)
+        .pipe(Effect.mapError(mapError(input, "workspace-safety", threadId)));
+
       // A reused worktree is already recorded, and rewriting it could undo
       // the first attempt's branch rename.
       if (reused === undefined) {
@@ -478,10 +483,6 @@ const make = Effect.gen(function* () {
         );
       }
 
-      const cwd = worktreePath ?? project.workspaceRoot;
-      yield* workspaceSafety
-        .assertAllowed(cwd)
-        .pipe(Effect.mapError(mapError(input, "workspace-safety", threadId)));
       if (runId !== null) {
         yield* threads
           .dispatch({

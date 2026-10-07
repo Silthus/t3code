@@ -31,10 +31,11 @@ it.effect("resolves setup scripts through the standalone project service", () =>
   );
   const listeners: Array<Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]> =
     [];
+  const unsubscribe = vi.fn();
   const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = (listener) =>
     Effect.sync(() => {
       listeners.push(listener);
-      return () => undefined;
+      return unsubscribe;
     });
   const projectId = ProjectId.make("project:setup-runner-v2");
   const project = {
@@ -133,6 +134,7 @@ it.effect("resolves setup scripts through the standalone project service", () =>
         threadId: "thread-blocking",
         terminalId: blocking.terminalId,
       });
+      assert.equal(unsubscribe.mock.calls.length, 2);
       assert.deepEqual(yield* blocking.completion!, { exitCode: null, durationMs: 0 });
     }
   }).pipe(Effect.provide(layer));

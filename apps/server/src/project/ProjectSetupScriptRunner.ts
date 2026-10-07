@@ -35,7 +35,7 @@ export interface ProjectSetupScriptRunnerResultStarted {
   /**
    * Resolves when the script's shell prints the completion sentinel. The
    * exit code is null when the terminal exited or was closed before the
-   * sentinel arrived. Only present when `observeCompletion` was requested.
+   * sentinel arrived. Present for blocking scripts or when `observeCompletion` was requested.
    * An exit code of 0 closes the setup shell if it has nothing left running.
    */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
@@ -227,11 +227,17 @@ export const make = Effect.gen(function* () {
       const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
       let lineBuffer = "";
       let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const stopObserving = () => {
+        unsubscribe?.();
+        unsubscribe = undefined;
+      };
 
       const settle = (exitCode: number | null) =>
         Effect.suspend(() => {
           if (settled) return Effect.void;
           settled = true;
+          stopObserving();
           return Clock.currentTimeMillis.pipe(
             Effect.flatMap((nowMs) =>
               Deferred.succeed(done, { exitCode, durationMs: nowMs - startedAtMs }),
@@ -259,7 +265,7 @@ export const make = Effect.gen(function* () {
           return input.onOutputLine(cleaned.slice(0, OUTPUT_LINE_MAX_LENGTH));
         });
 
-      const unsubscribe = yield* terminalManager.subscribe((event) => {
+      unsubscribe = yield* terminalManager.subscribe((event) => {
         if (event.threadId !== input.threadId || event.terminalId !== input.terminalId) {
           return Effect.void;
         }
@@ -286,10 +292,9 @@ export const make = Effect.gen(function* () {
         return Effect.void;
       });
 
-      const completion = Deferred.await(done).pipe(
-        Effect.ensuring(Effect.sync(() => unsubscribe())),
-      );
-      return { completion, unsubscribe };
+      if (settled) stopObserving();
+      const completion = Deferred.await(done).pipe(Effect.ensuring(Effect.sync(stopObserving)));
+      return { completion, unsubscribe: stopObserving };
     });
 
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(

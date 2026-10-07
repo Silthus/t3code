@@ -1,3 +1,4 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -709,6 +710,7 @@ export const make = Effect.gen(function* () {
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
+  const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
   const path = yield* Path.Path;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
@@ -2363,6 +2365,18 @@ export const make = Effect.gen(function* () {
   const preparePullRequestThread: GitManager["Service"]["preparePullRequestThread"] = Effect.fn(
     "preparePullRequestThread",
   )(function* (input) {
+    yield* workspaceSafety.assertAllowed(input.cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation: "GitManager.preparePullRequestThread",
+            command: "prepare pull request",
+            cwd: input.cwd,
+            detail: cause.message,
+            cause,
+          }),
+      ),
+    );
     const maybeRunSetupScript = (worktreePath: string) => {
       if (!input.threadId) {
         return Effect.void;
@@ -2892,6 +2906,6 @@ export const make = Effect.gen(function* () {
     preparePullRequestThread,
     runStackedAction,
   });
-});
+}).pipe(Effect.provide(WorkspaceSafety.layer));
 
 export const layer = Layer.effect(GitManager, make);

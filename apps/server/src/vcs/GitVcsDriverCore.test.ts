@@ -1,3 +1,4 @@
+import * as ConfigProvider from "effect/ConfigProvider";
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeFS from "node:fs";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -2794,6 +2795,51 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
   });
 
   describe("worktree operations", () => {
+    it.effect.each(["source", "explicit-destination", "allocated-destination"] as const)(
+      "refuses a protected %s without creating a checkout or branch",
+      (target) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const worktreesDirectory = yield* makeTmpDir("protected-worktrees-");
+          const worktreePath = path.join(
+            worktreesDirectory,
+            path.basename(cwd),
+            "protected-branch",
+          );
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const result = yield* driver
+            .createWorktree(
+              {
+                cwd,
+                path: target === "allocated-destination" ? null : worktreePath,
+                refName: initialBranch,
+                newRefName: "protected-branch",
+              },
+              { worktreesDirectory },
+            )
+            .pipe(
+              Effect.provide(
+                ConfigProvider.layer(
+                  ConfigProvider.fromEnv({
+                    env: {
+                      T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([
+                        target === "source" ? cwd : worktreesDirectory,
+                      ]),
+                    },
+                  }),
+                ),
+              ),
+              Effect.result,
+            );
+          assert.equal(result._tag, "Failure");
+          assert.isFalse(yield* fs.exists(worktreePath));
+          assert.equal(yield* git(cwd, ["branch", "--list", "protected-branch"]), "");
+        }),
+    );
+
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
