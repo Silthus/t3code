@@ -117,5 +117,23 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     });
     assert.deepEqual(lines, ["Downloading 10%", "Downloading 20%", "Done"]);
     yield* listener({ type: "closed", threadId: "thread-1", terminalId: "setup-setup" });
+    const blocking = yield* runner.runForThread({
+      threadId: "thread-blocking",
+      worktreePath: "/repo",
+      project: {
+        ...project,
+        scripts: project.scripts.map((script) => ({ ...script, async: false })),
+      },
+    });
+    assert.equal(blocking.status, "started");
+    if (blocking.status === "started") {
+      assert.isDefined(blocking.completion);
+      yield* listeners.at(-1)!({
+        type: "closed",
+        threadId: "thread-blocking",
+        terminalId: blocking.terminalId,
+      });
+      assert.deepEqual(yield* blocking.completion!, { exitCode: null, durationMs: 0 });
+    }
   }).pipe(Effect.provide(layer));
 });

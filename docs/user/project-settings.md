@@ -177,3 +177,11 @@ On mobile, use **Settings → Source control** to change selected environment de
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Preparing and protecting agent workspaces
+
+Use an imported project script with `runOnWorktreeCreate: true` and `async: false` when an agent must wait for preparation. T3 runs the script in the chosen workspace and waits for a successful exit before starting the provider. A failed or closed setup terminal leaves the run failed with a preparation error that you can fix and retry. This also applies to launches in the project root or an existing worktree. The script receives `T3CODE_PROJECT_ROOT` and `T3CODE_WORKTREE_PATH`.
+
+For a server that has template-owned directories, set `T3CODE_WORKSPACE_DENY_ROOTS` in its process environment to a JSON array of absolute directory paths, such as `["/srv/templates"]`. T3 refuses workspace preparation and provider startup when the workspace, its Git directory, or its Git common directory is inside one of those paths. Symlink aliases and worktrees outside the protected directory still count. Choose a separate clone with its own Git common directory. An unset value or `[]` disables this policy; it does not change unrelated projects. Invalid policy configuration or unreadable Git metadata fails preparation with an actionable error.
+
+The policy checks paths before worktree preparation and each provider turn. It does not sandbox commands inside a running agent.

@@ -2,6 +2,7 @@ import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
   CommandId,
+  ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ExecutionNode,
@@ -21,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -88,6 +90,7 @@ export const layer: Layer.Layer<
   | EventSink.EventSinkV2
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
+  | WorkspaceSafety.WorkspaceSafety
   | FileSystem.FileSystem
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
@@ -103,6 +106,7 @@ export const layer: Layer.Layer<
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
+    const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
@@ -455,6 +459,31 @@ export const layer: Layer.Layer<
           return;
         }
       }
+
+      const checkWorkspace = (cwd: string | null) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.result(workspaceSafety.assertAllowed(cwd));
+          if (result._tag === "Success") return true;
+          yield* settleRunBeforeStart({
+            signal: "workspace-safety",
+            status: "failed",
+            now: yield* DateTime.now,
+            providerInstanceId: run.providerInstanceId,
+            itemProviderThreadId: providerThread.id,
+            item: {
+              type: "error",
+              title: "Workspace safety refused provider start",
+              failure: makeProviderFailure({
+                cause: result.failure,
+                message: result.failure.message,
+                class: "provider_error",
+                code: ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
+              }),
+            },
+          });
+          return false;
+        });
+      if (!(yield* checkWorkspace(projection.thread.worktreePath ?? checkpointScope.cwd))) return;
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
@@ -466,6 +495,7 @@ export const layer: Layer.Layer<
             Effect.orElseSucceed(() => undefined),
           );
           if (project !== undefined) {
+            if (!(yield* checkWorkspace(project.workspaceRoot))) return;
             yield* Effect.logWarning("provider turn start recreating missing worktree", {
               threadId: projection.thread.id,
               worktreePath,
@@ -520,6 +550,7 @@ export const layer: Layer.Layer<
         thread: projection.thread,
         modelSelection: run.modelSelection,
       });
+      if (!(yield* checkWorkspace(resolvedRuntimePolicy.cwd))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );

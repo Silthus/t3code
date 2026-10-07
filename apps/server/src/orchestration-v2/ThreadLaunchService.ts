@@ -1,3 +1,4 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -129,6 +130,7 @@ export class ThreadLaunchError extends Schema.TaggedError<ThreadLaunchError>()(
       "read-receipt",
       "generate-metadata",
       "provision-worktree",
+      "workspace-safety",
       "run-setup-script",
       "create-thread",
       "update-thread",
@@ -173,6 +175,7 @@ function failureDetail(error: unknown): string {
 
 const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
+  const workspaceSafety = yield* WorkspaceSafety.WorkspaceSafety;
   const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
   const terminals = yield* TerminalManager.TerminalManager;
@@ -268,6 +271,14 @@ const make = Effect.gen(function* () {
       });
     }
     yield* Effect.gen(function* () {
+      yield* workspaceSafety
+        .assertAllowed(project.workspaceRoot)
+        .pipe(Effect.mapError(mapError(input, "workspace-safety", threadId)));
+      if (input.workspaceStrategy.type === "existing_worktree") {
+        yield* workspaceSafety
+          .assertAllowed(input.workspaceStrategy.worktreePath)
+          .pipe(Effect.mapError(mapError(input, "workspace-safety", threadId)));
+      }
       const initialMessage = input.initialMessage;
       const generateBranchNameFor = (cwd: string, message: ThreadLaunchInitialMessage) =>
         Effect.gen(function* () {
@@ -468,6 +479,9 @@ const make = Effect.gen(function* () {
       }
 
       const cwd = worktreePath ?? project.workspaceRoot;
+      yield* workspaceSafety
+        .assertAllowed(cwd)
+        .pipe(Effect.mapError(mapError(input, "workspace-safety", threadId)));
       if (runId !== null) {
         yield* threads
           .dispatch({

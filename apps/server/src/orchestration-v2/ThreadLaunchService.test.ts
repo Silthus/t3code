@@ -1,3 +1,5 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
@@ -195,6 +197,7 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
+        WorkspaceSafety.layer.pipe(Layer.provide(NodeServices.layer)),
         layerThreadManagement,
         layerReceipts,
         IdAllocator.layer,
@@ -2268,4 +2271,93 @@ it.effect.each([0, 1])("releases an async setup before its completion with exit 
       );
     }).pipe(Effect.provide(harness.layer));
   }),
+);
+
+it.effect("refuses a protected project before worktree mutation or provider release", () => {
+  const createWorktree = vi.fn(() => Effect.die("Protected repository must not be mutated"));
+  const harness = makeHarness({ createWorktree });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const input = launchInput({
+      command: "safety:protected",
+      thread: "thread:safety:protected",
+      message: "Start",
+      workspace: { type: "worktree", baseRef: "main" },
+    });
+    const launched = yield* launches.launch(input);
+    const terminal = yield* threads.waitForThread({
+      projectId,
+      threadId: launched.threadId,
+      timeoutMs: 1000,
+    });
+    assert.isFalse(terminal.timedOut);
+    assert.equal(terminal.run?.status, "failed");
+    assert.equal(createWorktree.mock.calls.length, 0);
+    const projection = yield* threads.getThreadProjection(launched.threadId);
+    assert.isTrue(
+      projection.turnItems.some(
+        (item) =>
+          item.type === "error" && item.failure.message.includes("Workspace safety refused"),
+      ),
+    );
+  }).pipe(
+    Effect.provide(harness.layer),
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromEnv({ env: { T3CODE_WORKSPACE_DENY_ROOTS: '["/repo"]' } }),
+      ),
+    ),
+  );
+});
+
+it.effect.each(["root", "existing_worktree", "worktree"] as const)(
+  "keeps a failed blocking prepare actionable before provider release for %s",
+  (type) => {
+    const harness = makeHarness({
+      runSetup: () =>
+        Effect.succeed({
+          status: "started",
+          async: false,
+          scriptId: "prepare",
+          scriptName: "Prepare",
+          scriptCommand: "prepare",
+          terminalId: "prepare",
+          cwd: "/repo",
+          completion: Effect.succeed({ exitCode: 7, durationMs: 1 }),
+        }),
+    });
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const input = launchInput({
+        command: `prepare:failed:${type}`,
+        thread: `thread:prepare:failed:${type}`,
+        message: "Start",
+        workspace:
+          type === "root"
+            ? { type }
+            : type === "existing_worktree"
+              ? { type, worktreePath: "/repo-worktree" }
+              : { type, baseRef: "main" },
+      });
+      const launched = yield* launches.launch(input);
+      const terminal = yield* threads.waitForThread({
+        projectId,
+        threadId: launched.threadId,
+        timeoutMs: 1000,
+      });
+      assert.isFalse(terminal.timedOut);
+      assert.equal(terminal.run?.status, "failed");
+      assert.isEmpty(yield* outbox.listByCommandId(CommandId.make(`${input.commandId}:release`)));
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      assert.isTrue(
+        projection.turnItems.some(
+          (item) =>
+            item.type === "error" && item.failure.message.includes("Setup script exited with 7"),
+        ),
+      );
+    }).pipe(Effect.provide(harness.layer));
+  },
 );

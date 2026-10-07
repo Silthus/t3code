@@ -367,7 +367,7 @@ export const make = Effect.gen(function* () {
       // Keep TERM's 256-color support without advertising truecolor here.
       COLORTERM: "",
     };
-    const observe = input.observeCompletion;
+    const observe = input.observeCompletion ?? (script.async === false ? {} : undefined);
     const completionToken = observe
       ? (yield* crypto.randomUUIDv4.pipe(Effect.orDie)).replaceAll("-", "")
       : null;
