@@ -789,6 +789,62 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  it.effect("refuses a protected reused PR worktree before changing its tracking or checkout", () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempDir("protected-pr-source-");
+      yield* initRepo(cwd);
+      const origin = yield* createBareRemote();
+      yield* runGit(cwd, ["remote", "add", "origin", origin]);
+      yield* runGit(cwd, ["checkout", "-b", "feature/protected-pr"]);
+      yield* runGit(cwd, ["push", "-u", "origin", "feature/protected-pr"]);
+      yield* runGit(cwd, ["checkout", "main"]);
+      const protectedRoot = yield* makeTempDir("protected-pr-destination-");
+      const worktree = NodePath.join(protectedRoot, "checkout");
+      yield* runGit(cwd, ["worktree", "add", worktree, "feature/protected-pr"]);
+      yield* runGit(worktree, ["branch", "--unset-upstream"]);
+      NodeFS.writeFileSync(NodePath.join(worktree, "local.txt"), "keep local changes\n");
+      const before = (yield* runGit(worktree, ["rev-parse", "HEAD"])).stdout.trim();
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 64,
+            title: "Protected PR",
+            url: "https://github.com/example/repo/pull/64",
+            baseRefName: "main",
+            headRefName: "feature/protected-pr",
+            state: "open",
+          },
+        },
+      });
+      const result = yield* manager
+        .preparePullRequestThread({ cwd, reference: "#64", mode: "worktree" })
+        .pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([protectedRoot]),
+                },
+              }),
+            ),
+          ),
+          Effect.result,
+        );
+      expect(result._tag).toBe("Failure");
+      expect((yield* runGit(worktree, ["rev-parse", "HEAD"])).stdout.trim()).toBe(before);
+      expect(NodeFS.readFileSync(NodePath.join(worktree, "local.txt"), "utf8")).toBe(
+        "keep local changes\n",
+      );
+      expect(
+        (yield* runGit(
+          worktree,
+          ["config", "--get", "branch.feature/protected-pr.remote"],
+          true,
+        )).stdout.trim(),
+      ).toBe("");
+    }),
+  );
+
   it.effect.each(["local", "worktree"] as const)(
     "refuses protected pull request preparation in %s mode before checkout",
     (mode) =>

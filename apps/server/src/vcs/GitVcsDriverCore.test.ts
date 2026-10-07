@@ -2795,6 +2795,47 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
   });
 
   describe("worktree operations", () => {
+    it.effect.each([false, true])(
+      "resolves relative worktree destinations against the source before policy checks: denied=%s",
+      (denied) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const destination = path.join(cwd, "relative-checkout");
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const result = yield* driver
+            .createWorktree({
+              cwd,
+              path: "relative-checkout",
+              refName: initialBranch,
+              newRefName: "relative-branch",
+            })
+            .pipe(
+              Effect.provide(
+                ConfigProvider.layer(
+                  ConfigProvider.fromEnv({
+                    env: {
+                      T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify(denied ? [destination] : []),
+                    },
+                  }),
+                ),
+              ),
+              Effect.result,
+            );
+          if (denied) {
+            assert.equal(result._tag, "Failure");
+            assert.isFalse(yield* fs.exists(destination));
+            assert.equal(yield* git(cwd, ["branch", "--list", "relative-branch"]), "");
+          } else {
+            assert.equal(result._tag, "Success");
+            if (result._tag === "Success") assert.equal(result.success.worktree.path, destination);
+            assert.isTrue(yield* fs.exists(destination));
+          }
+        }),
+    );
+
     it.effect.each(["source", "explicit-destination", "allocated-destination"] as const)(
       "refuses a protected %s without creating a checkout or branch",
       (target) =>

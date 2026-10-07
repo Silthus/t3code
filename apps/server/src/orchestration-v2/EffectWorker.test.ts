@@ -1,6 +1,9 @@
+import * as WorkspaceSafety from "../workspace/WorkspaceSafety.ts";
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  CheckpointId,
+  CheckpointScopeId,
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
@@ -81,6 +84,7 @@ function layerExecutorFor(input: {
   readonly failFirstStart?: Ref.Ref<boolean>;
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
+  readonly rollback?: CheckpointRollbackService.CheckpointRollbackServiceV2Shape["execute"];
   readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
 }) {
   const record = (event: string) => Ref.update(input.events, (events) => [...events, event]);
@@ -134,7 +138,9 @@ function layerExecutorFor(input: {
     ),
     Layer.succeed(
       CheckpointRollbackService.CheckpointRollbackServiceV2,
-      CheckpointRollbackService.CheckpointRollbackServiceV2.of({ execute: () => Effect.void }),
+      CheckpointRollbackService.CheckpointRollbackServiceV2.of({
+        execute: input.rollback ?? (() => Effect.void),
+      }),
     ),
     Layer.succeed(
       RuntimeRequestService.RuntimeRequestServiceV2,
@@ -835,5 +841,70 @@ it.effect("settles a delegated child once its restart continuation fails for goo
       );
       assert.deepEqual(yield* Ref.get(recovered), [threadId]);
     }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect("fails a protected rollback once and reports its actionable refusal to the client", () =>
+  Effect.gen(function* () {
+    const now = DateTime.formatIso(yield* DateTime.now);
+    const events = yield* Ref.make<ReadonlyArray<string>>([]);
+    const record = (event: string) => Ref.update(events, (values) => [...values, event]);
+    const workerId = "protected-rollback-worker";
+    const checkpointId = CheckpointId.make("checkpoint:protected-rollback");
+    const scopeId = CheckpointScopeId.make("scope:protected-rollback");
+    const refusal = new CheckpointRollbackService.CheckpointRollbackExecutionError({
+      reason: "workspace-safety",
+      threadId,
+      providerThreadId,
+      checkpointId,
+      cause: new WorkspaceSafety.WorkspaceSafetyError({
+        workspaceRoot: "/protected",
+        reason: "protected",
+      }),
+    });
+    const claimed: EffectOutbox.OrchestrationEffectV2 = {
+      id: "effect:protected-rollback",
+      commandId: CommandId.make("command:protected-rollback"),
+      threadId,
+      request: { type: "provider-thread.rollback", providerThreadId, checkpointId, scopeId },
+      status: "running",
+      attemptCount: 1,
+      availableAt: now,
+      leaseOwner: workerId,
+      leaseExpiresAt: now,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      lastError: null,
+    };
+    const outbox = Layer.mock(EffectOutbox.EffectOutboxV2)({
+      claimNext: () => Effect.succeed(Option.some(claimed)),
+      get: () => Effect.succeed(Option.some(claimed)),
+      awaitCancellation: () => Effect.never,
+      clearCancellation: () => Effect.void,
+      fail: () => record("failed").pipe(Effect.as(true)),
+      succeed: () => record("succeeded").pipe(Effect.as(true)),
+      retry: () => record("retry").pipe(Effect.as(true)),
+    });
+    const executor = layerExecutorFor({
+      events,
+      rollback: () => record("rollback").pipe(Effect.andThen(Effect.fail(refusal))),
+      threads: {
+        dispatch: (command) =>
+          command.type === "checkpoint.rollback.fail"
+            ? record(`message:${command.message}`).pipe(Effect.as({} as never))
+            : Effect.die("Unexpected command"),
+      },
+    });
+    const handled = yield* EffectWorker.OrchestrationEffectWorkerV2.pipe(
+      Effect.flatMap((worker) => worker.runOnce),
+      Effect.provide(
+        EffectWorker.layerWithOptions({ workerId, maxAttempts: 5 }).pipe(
+          Layer.provide(Layer.merge(outbox, executor)),
+        ),
+      ),
+    );
+    assert.isTrue(handled);
+    assert.deepEqual(yield* Ref.get(events), ["rollback", `message:${refusal.message}`, "failed"]);
   }),
 );

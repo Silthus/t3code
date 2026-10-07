@@ -31,6 +31,8 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectService from "./ProjectService.ts";
 
+const isWorkspaceSafetyError = Schema.is(WorkspaceSafety.WorkspaceSafetyError);
+
 export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailableError>()(
   "ScratchUnavailableError",
   {},
@@ -48,7 +50,9 @@ export class ScratchFolderError extends Schema.TaggedError<ScratchFolderError>()
   },
 ) {
   override get message(): string {
-    return "Failed to create the folder for threads without a project.";
+    return isWorkspaceSafetyError(this.cause)
+      ? this.cause.message
+      : "Failed to create the folder for threads without a project.";
   }
 }
 
@@ -74,7 +78,9 @@ export class NamedProjectFolderError extends Schema.TaggedError<NamedProjectFold
   },
 ) {
   override get message(): string {
-    return "Failed to create the project folder.";
+    return isWorkspaceSafetyError(this.cause)
+      ? this.cause.message
+      : "Failed to create the project folder.";
   }
 }
 
@@ -387,6 +393,13 @@ const make = Effect.gen(function* () {
   const claimNamedFolder = Effect.fn("ManagedProjectFolders.claimNamedFolder")(function* (
     name: string,
   ) {
+    yield* workspaceSafety
+      .assertAllowed(namedProjectsRoot)
+      .pipe(
+        Effect.mapError(
+          (cause) => new NamedProjectFolderError({ folder: namedProjectsRoot, cause }),
+        ),
+      );
     yield* fileSystem
       .makeDirectory(namedProjectsRoot, { recursive: true })
       .pipe(

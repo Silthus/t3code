@@ -2365,18 +2365,20 @@ export const make = Effect.gen(function* () {
   const preparePullRequestThread: GitManager["Service"]["preparePullRequestThread"] = Effect.fn(
     "preparePullRequestThread",
   )(function* (input) {
-    yield* workspaceSafety.assertAllowed(input.cwd).pipe(
-      Effect.mapError(
-        (cause) =>
-          new GitCommandError({
-            operation: "GitManager.preparePullRequestThread",
-            command: "prepare pull request",
-            cwd: input.cwd,
-            detail: cause.message,
-            cause,
-          }),
-      ),
-    );
+    const assertWorkspaceAllowed = (cwd: string) =>
+      workspaceSafety.assertAllowed(cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitManager.preparePullRequestThread",
+              command: "prepare pull request",
+              cwd: input.cwd,
+              detail: cause.message,
+              cause,
+            }),
+        ),
+      );
+    yield* assertWorkspaceAllowed(input.cwd);
     const maybeRunSetupScript = (worktreePath: string) => {
       if (!input.threadId) {
         return Effect.void;
@@ -2459,6 +2461,7 @@ export const make = Effect.gen(function* () {
         worktreePath: string,
         checkedOutBranch: string,
       ) {
+        yield* assertWorkspaceAllowed(worktreePath);
         if (checkedOutBranch !== localPullRequestBranch) {
           // findLocalHeadBranch also accepts a branch that merely shares the head's bare name —
           // a fork PR opened from "main" matches the user's own local main. That checkout is

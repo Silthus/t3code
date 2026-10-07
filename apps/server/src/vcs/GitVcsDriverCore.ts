@@ -3370,6 +3370,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       worktreePath = path.join(parentDir, repoName, sanitizedBranch);
     }
+    worktreePath = path.resolve(input.cwd, worktreePath);
     for (const cwd of [input.cwd, worktreePath]) {
       yield* workspaceSafety.assertAllowed(cwd).pipe(
         Effect.mapError(

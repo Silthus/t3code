@@ -29,6 +29,10 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 
+const isCheckpointRollbackError = Schema.is(
+  CheckpointRollbackService.CheckpointRollbackExecutionError,
+);
+
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
   {
@@ -379,11 +383,10 @@ export const layerExecutor: Layer.Layer<
                   : { restoreFiles: effect.request.restoreFiles }),
               })
               .pipe(
-                // The last failed attempt tells waiting clients it failed,
-                // instead of leaving them to time out. Clients get a fixed
-                // message; the worker logs the full cause for each attempt.
-                Effect.tapCause((cause) =>
-                  willRetry || Cause.hasInterruptsOnly(cause)
+                Effect.tapCause((cause) => {
+                  const failure = Option.getOrUndefined(Cause.findErrorOption(cause));
+                  const workspaceRefused = failure?.reason === "workspace-safety";
+                  return (willRetry && !workspaceRefused) || Cause.hasInterruptsOnly(cause)
                     ? Effect.void
                     : threads
                         .dispatch({
@@ -391,7 +394,9 @@ export const layerExecutor: Layer.Layer<
                           commandId: CommandId.make(`${effect.commandId}:rollback-failed`),
                           threadId: effect.threadId,
                           requestId: effect.commandId,
-                          message: CheckpointRollbackService.ROLLBACK_FAILED_MESSAGE,
+                          message: workspaceRefused
+                            ? failure.message
+                            : CheckpointRollbackService.ROLLBACK_FAILED_MESSAGE,
                         })
                         .pipe(
                           Effect.catchCause((recordCause) =>
@@ -400,8 +405,8 @@ export const layerExecutor: Layer.Layer<
                               cause: recordCause,
                             }),
                           ),
-                        ),
-                ),
+                        );
+                }),
                 Effect.mapError(
                   (cause) =>
                     new OrchestrationEffectExecutionError({
@@ -703,6 +708,12 @@ export const layerWithOptions = (
           }
 
           const error = Cause.pretty(exit.cause);
+          const failure = Option.getOrUndefined(Cause.findErrorOption(exit.cause));
+          const workspaceRefused =
+            effect.request.type === "provider-thread.rollback" &&
+            failure !== undefined &&
+            isCheckpointRollbackError(failure.cause) &&
+            failure.cause.reason === "workspace-safety";
           const nonRetryable = isNonRetryableProviderTurnControlFailure(effect.request.type, error);
           yield* Effect.logWarning("Orchestration effect execution failed", {
             effectId: effect.id,
@@ -717,7 +728,7 @@ export const layerWithOptions = (
             ? yield* outbox
                 .succeed({ effectId: effect.id, workerId })
                 .pipe(Effect.onError((cause) => terminalizeClaim(effect, cause)))
-            : effect.attemptCount >= maxAttempts
+            : workspaceRefused || effect.attemptCount >= maxAttempts
               ? yield* outbox
                   .fail({ effectId: effect.id, workerId, error })
                   .pipe(Effect.onError((cause) => terminalizeClaim(effect, cause)))

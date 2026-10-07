@@ -599,7 +599,34 @@ it.effect("refuses a protected Scratch root before recreating or claiming folder
           Effect.result,
         );
       assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure")
+        assert.match(result.failure.message, /T3CODE_WORKSPACE_DENY_ROOTS/);
       assert.isFalse(yield* fs.exists(root));
+    }),
+  ),
+);
+
+it.effect("refuses a protected named-project root before creating its parent directory", () =>
+  withScratch(() =>
+    Effect.gen(function* () {
+      const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+      const fs = yield* FileSystem.FileSystem;
+      const result = yield* folders.createNamedProject({ name: "Protected" }).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_WORKSPACE_DENY_ROOTS: JSON.stringify([folders.namedProjectsRoot]),
+              },
+            }),
+          ),
+        ),
+        Effect.result,
+      );
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure")
+        assert.match(result.failure.message, /T3CODE_WORKSPACE_DENY_ROOTS/);
+      assert.isFalse(yield* fs.exists(folders.namedProjectsRoot));
     }),
   ),
 );
