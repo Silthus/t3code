@@ -1024,14 +1024,18 @@ const make = Effect.gen(function* () {
         return yield* failure("thread_not_found", `Thread ${threadId} is no longer available.`);
       }
       const target = yield* threadManagement
-        .getProjectThreadRecords({ projectId: shell.projectId, threadId }, [
-          "runs",
-          "runtimeRequests",
-          "contextTransfers",
-          "providerThreads",
-          "providerTurns",
-          "attempts",
-        ])
+        .getProjectThreadRecords(
+          { projectId: shell.projectId, threadId },
+          [
+            "runs",
+            "runtimeRequests",
+            "contextTransfers",
+            "providerThreads",
+            "providerTurns",
+            "attempts",
+          ],
+          { currentContextOnly: true },
+        )
         .pipe(Effect.mapError(threadManagementFailure));
       return { parent, target } as const;
     });

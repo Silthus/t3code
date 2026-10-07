@@ -772,6 +772,9 @@ const make = Effect.gen(function* () {
                 commandId: input.commandId,
                 threadId: candidateThreadId,
                 expectedEmpty: true,
+                ...(input.contextBudgetTokens === undefined
+                  ? {}
+                  : { contextBudgetTokens: input.contextBudgetTokens }),
               })
             : threads.dispatch({
                 type: "thread.create",

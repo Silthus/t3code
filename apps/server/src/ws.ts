@@ -1943,6 +1943,9 @@ const layerWsRpc = (
                       : { reuseExistingThread: input.reuseExistingThread }),
                     projectId: input.projectId,
                     title: input.title,
+                    ...(input.contextBudgetTokens === undefined
+                      ? {}
+                      : { contextBudgetTokens: input.contextBudgetTokens }),
                     ...(input.generateTitle === undefined
                       ? {}
                       : { generateTitle: input.generateTitle }),

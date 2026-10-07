@@ -277,6 +277,7 @@ export interface ProjectionRuntimeResponseContext {
 }
 
 export interface ProjectionRecordFilter {
+  readonly currentContextOnly?: boolean;
   readonly messageRoles?: ReadonlyArray<OrchestrationV2ConversationMessage["role"]>;
   readonly turnItemRunId?: RunId;
   readonly messageIds?: ReadonlyArray<MessageId>;
@@ -2662,6 +2663,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           return yield* new ProjectionStoreThreadNotFoundError({ threadId });
         }
 
+        const currentContextTurn = filter?.currentContextOnly
+          ? (yield* sql<{ readonly provider_turn_id: string; readonly run_attempt_id: string }>`
+              SELECT turn.provider_turn_id, turn.run_attempt_id
+              FROM orchestration_v2_projection_provider_turns AS turn
+              INNER JOIN orchestration_v2_projection_run_attempts AS attempt
+                ON attempt.attempt_id = turn.run_attempt_id
+              INNER JOIN orchestration_v2_projection_provider_threads AS provider
+                ON provider.provider_thread_id = turn.provider_thread_id
+              WHERE turn.thread_id = ${threadId}
+                AND turn.provider_thread_id = json_extract(${threadRow.payload_json}, '$.activeProviderThreadId')
+                AND attempt.provider_thread_id = turn.provider_thread_id
+                AND attempt.root_node_id = turn.node_id
+                AND json_extract(attempt.payload_json, '$.nativeThreadId') = json_extract(provider.payload_json, '$.nativeThreadRef.nativeId')
+                AND json_type(turn.payload_json, '$.tokenUsage') = 'object'
+              ORDER BY json_extract(turn.payload_json, '$.tokenUsage.updatedAt') DESC, turn.provider_turn_id DESC
+              LIMIT 1
+            `)[0]
+          : undefined;
+
         const boundedTurnItemRows =
           fields !== undefined && !fields.includes("turnItems")
             ? []
@@ -2901,6 +2921,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT payload_json
             FROM orchestration_v2_projection_run_attempts
             WHERE thread_id = ${threadId}
+              ${filter?.currentContextOnly ? sql`AND attempt_id = ${currentContextTurn?.run_attempt_id ?? null}` : sql``}
             ORDER BY run_id ASC, attempt_ordinal ASC
           `
               : sql<PayloadRow>`
@@ -2967,8 +2988,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           `,
           fields !== undefined && !fields.includes("providerThreads")
             ? Effect.succeed([])
-            : window === undefined
-              ? sql<PayloadRow>`
+            : filter?.currentContextOnly
+              ? sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_provider_threads
+                  WHERE provider_thread_id = json_extract(${threadRow.payload_json}, '$.activeProviderThreadId') LIMIT 1`
+              : window === undefined
+                ? sql<PayloadRow>`
             SELECT payload_json
             FROM orchestration_v2_projection_provider_threads
             WHERE thread_id = ${threadId}
@@ -2985,7 +3009,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                )
             ORDER BY COALESCE(first_run_ordinal, 0), provider_thread_id ASC
           `
-              : sql<PayloadRow>`
+                : sql<PayloadRow>`
             SELECT payload_json FROM orchestration_v2_projection_provider_threads
             WHERE (thread_id = ${threadId} AND status = 'active')
               OR provider_thread_id IN (SELECT value FROM json_each(${cohortProviderThreadIds}))
@@ -2999,6 +3023,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT payload_json
             FROM orchestration_v2_projection_provider_turns
             WHERE thread_id = ${threadId}
+              ${filter?.currentContextOnly ? sql`AND provider_turn_id = ${currentContextTurn?.provider_turn_id ?? null}` : sql``}
             ORDER BY provider_thread_id ASC, ordinal ASC
           `
               : sql<PayloadRow>`

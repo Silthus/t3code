@@ -731,7 +731,46 @@ it.effect(
         occurredAt: now,
         payload: { ...providerThread, contextUsage: { usedTokens: 250_000 } },
       });
+      assert.isFalse(
+        (yield* projections.getThreadProjection(threadId)).runtimeRequests.some(
+          (request) => request.status === "pending",
+        ),
+      );
       yield* delegate("budget:off-child");
       assert.equal((yield* projections.getThreadProjection(threadId)).subagents.length, 3);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads current context evidence without hydrating historical provider rows", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const sql = yield* SqlClient.SqlClient;
+    const threadId = ThreadId.make("thread:bounded-context");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("bounded-context:create"),
+      threadId,
+      projectId: ProjectId.make("project:bounded-context"),
+      title: "Bounded context",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* sql`INSERT INTO orchestration_v2_projection_provider_turns
+      (provider_turn_id, thread_id, provider_thread_id, node_id, ordinal, status, payload_json)
+      VALUES ('historical', ${threadId}, 'old-provider', 'old-node', 1, 'completed', '{"obsolete":true}')`;
+    const evidence = yield* projections.getThreadRecords(
+      threadId,
+      ["providerThreads", "providerTurns", "attempts", "runs"],
+      { currentContextOnly: true },
+    );
+    assert.isEmpty(evidence.providerTurns);
+    assert.isEmpty(evidence.attempts);
+    assert.isEmpty(evidence.providerThreads);
+  }).pipe(Effect.provide(layerTest)),
 );

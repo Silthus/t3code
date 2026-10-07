@@ -2751,6 +2751,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       markUnreadVisitedAt = DateTime.subtract(latestRunCompletedAt, { milliseconds: 1 });
     }
+    if (command.type === "thread.metadata.update" && command.contextBudgetTokens !== undefined) {
+      const { runtimeRequests } = yield* loadProjectionForCommand(command, ["runtimeRequests"]);
+      for (const request of runtimeRequests) {
+        if (request.status === "pending" && request.id.startsWith("context-budget:")) {
+          yield* dispatchRuntimeRequestRespond(
+            {
+              type: "runtime-request.respond",
+              commandId: command.commandId,
+              threadId: command.threadId,
+              requestId: request.id,
+              decision: "cancel",
+            },
+            events,
+            effects,
+          );
+        }
+      }
+    }
+
     const updatedThread: OrchestrationV2AppThread = (() => {
       switch (command.type) {
         case "thread.archive":

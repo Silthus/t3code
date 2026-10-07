@@ -508,6 +508,30 @@ it.effect("provisions independent launches concurrently instead of behind a glob
   }),
 );
 
+it.effect("applies the launch context budget when reusing an empty thread", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const input = launchInput({
+      command: "budget:reuse:create",
+      thread: "thread:budget:reuse",
+      workspace: { type: "root" },
+    });
+    yield* launches.launch(input);
+    yield* launches.launch({
+      ...input,
+      commandId: CommandId.make("budget:reuse:launch"),
+      reuseExistingThread: true,
+      contextBudgetTokens: 200_000,
+    });
+    assert.equal(
+      (yield* threads.getThreadProjection(input.threadId!)).thread.contextBudgetTokens,
+      200_000,
+    );
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect("enqueues provider work only after setup has been initiated", () =>
   Effect.gen(function* () {
     const setupEntered = yield* Deferred.make<void>();
