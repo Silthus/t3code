@@ -59,13 +59,14 @@ const ThreadMetadataMcpPullRequestUrl = TrimmedNonEmptyString.check(
 });
 
 export const ThreadMetadataMcpAction = Schema.Literals([
+  "context_budget",
   "rename",
   "regenerate_title",
   "link_pull_request",
   "unlink_pull_request",
 ]).annotate({
   description:
-    "Metadata mutation: rename, regenerate_title, link_pull_request, or unlink_pull_request.",
+    "Metadata mutation: context_budget, rename, regenerate_title, link_pull_request, or unlink_pull_request.",
 });
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;
 
@@ -83,6 +84,10 @@ export const ThreadMetadataMcpUpdateInput = Schema.Struct({
     description: "Thread to update. Omit to update the calling thread.",
   }),
   action: ThreadMetadataMcpAction,
+  contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)).annotate({
+    description:
+      "Required for context_budget. Positive token threshold pauses new app-owned child dispatch when reported usage reaches it; null disables the budget. Unknown usage continues. Existing work and the human's model selection stay unchanged.",
+  }),
   title: Schema.optional(ThreadMetadataTitle),
   pullRequest: Schema.optional(ThreadMetadataMcpPullRequest).annotate({
     description: "Pull request to link. Required only when action is link_pull_request.",
@@ -90,7 +95,16 @@ export const ThreadMetadataMcpUpdateInput = Schema.Struct({
   clientRequestId: Schema.optional(ThreadMetadataClientRequestId),
 }).check(
   Schema.makeFilter((input) => {
+    if (input.action !== "context_budget" && input.contextBudgetTokens !== undefined) {
+      return `${input.action} does not accept contextBudgetTokens.`;
+    }
     switch (input.action) {
+      case "context_budget":
+        return input.contextBudgetTokens !== undefined &&
+          input.title === undefined &&
+          input.pullRequest === undefined
+          ? true
+          : "context_budget requires contextBudgetTokens and does not accept title or pullRequest.";
       case "rename":
         return input.title !== undefined && input.pullRequest === undefined
           ? true
@@ -114,6 +128,7 @@ export const ThreadMetadataMcpUpdateResult = Schema.Struct({
   action: ThreadMetadataMcpAction,
   commandId: CommandId,
   sequence: NonNegativeInt,
+  contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)),
   title: Schema.String,
   titleRegeneration: Schema.NullOr(ThreadTitleRegeneration),
   linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),

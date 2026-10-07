@@ -666,6 +666,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
       "thread_not_sendable",
       "thread_not_interruptible",
       "invalid_request",
+      "context_budget_reached",
       "orchestration_error",
       "thread_credential_required",
       "target_required",

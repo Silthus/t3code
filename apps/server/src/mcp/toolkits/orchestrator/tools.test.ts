@@ -82,6 +82,7 @@ describe("orchestrator MCP tool guidance", () => {
     assert.hasAllKeys(schema.properties ?? {}, [
       "threadId",
       "action",
+      "contextBudgetTokens",
       "title",
       "pullRequest",
       "clientRequestId",

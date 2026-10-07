@@ -114,7 +114,10 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     title: TrimmedNonEmptyString,
-    contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+    contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)).annotate({
+      description:
+        "Optional token threshold for new app-owned child dispatch. Omitted or null disables the budget; reported usage at the threshold pauses new children and requests a durable handoff. Unknown usage and accepted work continue. Change it later with t3_thread_update action=context_budget.",
+    }),
     modelSelection: Schema.optional(ModelSelection),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),

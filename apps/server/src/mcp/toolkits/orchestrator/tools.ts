@@ -206,7 +206,7 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
 
 export const ThreadUpdateTool = Tool.make("t3_thread_update", {
   description:
-    "Update metadata for a thread. Omit threadId to update this thread. Use action='rename' with title, action='regenerate_title' with no extra field, action='link_pull_request' with pullRequest, or action='unlink_pull_request'. Workspace and branch changes are intentionally not supported. clientRequestId makes retries idempotent.",
+    "Update metadata for a thread. Omit threadId to update this thread. Use action='context_budget' with contextBudgetTokens to set a positive token threshold or null to disable it. The budget pauses new app-owned child dispatch at reported usage, preserves accepted work and the human's model selection, and allows unknown usage. Use action='rename' with title, action='regenerate_title' with no extra field, action='link_pull_request' with pullRequest, or action='unlink_pull_request'. Workspace and branch changes are intentionally not supported. clientRequestId makes retries idempotent.",
   parameters: ThreadMetadataMcpUpdateInput,
   success: ThreadMetadataMcpUpdateResult,
   failure: OrchestratorMcpFailure,
