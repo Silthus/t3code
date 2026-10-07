@@ -10,6 +10,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   RunId,
   ThreadId,
   type OrchestrationV2ThreadProjection,
@@ -1807,3 +1808,97 @@ describe("OrchestratorMcpService provider resolution", () => {
     );
   });
 });
+
+it.effect(
+  "reads the current provider context report and exposes missing telemetry as unknown",
+  () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:read-context");
+      const shell = liveThreadShell(threadId);
+      let projection = idleThreadProjection(shell);
+      const providerThreadId = ProviderThreadId.make("provider-thread:read-context");
+      projection = {
+        ...projection,
+        thread: {
+          ...projection.thread,
+          activeProviderThreadId: providerThreadId,
+          contextBudgetTokens: 200_000,
+        },
+      };
+      projection = {
+        ...projection,
+        providerThreads: [
+          {
+            id: providerThreadId,
+            driver: ProviderDriverKind.make("claudeAgent"),
+            providerInstanceId: shell.providerInstanceId,
+            providerSessionId: null,
+            appThreadId: threadId,
+            ownerNodeId: null,
+            nativeThreadRef: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              nativeId: "native:current",
+              strength: "strong",
+            },
+            nativeConversationHeadRef: null,
+            status: "active",
+            firstRunOrdinal: 1,
+            lastRunOrdinal: 1,
+            handoffIds: [],
+            forkedFrom: null,
+            contextUsage: { usedTokens: 201_000, maxTokens: 1_000_000 },
+            createdAt: shell.createdAt,
+            updatedAt: shell.updatedAt,
+          },
+        ],
+      };
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+        Effect.provide(
+          OrchestratorMcpService.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  getThreadShell: () => Effect.succeed(shell),
+                  getProjectThreadRecords: () => Effect.succeed(projection),
+                  getTimelinePage: () =>
+                    Effect.succeed({ items: [], totalItems: 0, hasMore: false }),
+                }),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+                Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+                Layer.mock(ProjectService.ProjectService)({}),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+              ),
+            ),
+          ),
+        ),
+      );
+      const scope: McpInvocationScope = {
+        environmentId: EnvironmentId.make("environment:read-context"),
+        requestNamespace: "read-context",
+        issuedAt: 1,
+        capabilities: new Set(["orchestration"]),
+        client: { sessionId: "read-context", label: "Reader", access: "read-only" },
+        thread: undefined,
+      };
+      const known = yield* service.readThread(scope, { threadId });
+      assert.equal(known.thread.contextBudgetTokens, 200_000);
+      assert.deepEqual(known.thread.contextUsage, {
+        usage: { usedTokens: 201_000, maxTokens: 1_000_000 },
+        providerThreadId,
+        nativeThreadId: "native:current",
+        reportedAt: null,
+        source: "provider_thread",
+      });
+      projection = {
+        ...projection,
+        providerThreads: projection.providerThreads.map((thread) => ({
+          ...thread,
+          contextUsage: null,
+        })),
+      };
+      const unknown = yield* service.readThread(scope, { threadId });
+      assert.isNull(unknown.thread.contextUsage);
+    }),
+);

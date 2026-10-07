@@ -624,3 +624,114 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
     assert.deepEqual(parentAfterChildLink.thread.pullRequests, parent.thread.pullRequests);
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect(
+  "requests a durable context handoff before another child dispatch without losing accepted work",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = ThreadId.make("thread:context-budget");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("budget:create"),
+        threadId,
+        projectId: ProjectId.make("project:budget"),
+        title: "Conductor",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("budget:start"),
+        threadId,
+        messageId: MessageId.make("budget:accepted-task"),
+        text: "Keep the accepted plan and verified artifact paths",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      let before = yield* projections.getThreadProjection(threadId);
+      const run = before.runs[0]!;
+      const delegate = (key: string) =>
+        orchestrator.dispatch({
+          type: "delegated_task.request",
+          commandId: CommandId.make(key),
+          parentThreadId: threadId,
+          parentRunId: run.id,
+          parentNodeId: run.rootNodeId!,
+          task: "Implement the next task",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdBy: "agent",
+          creationSource: "mcp",
+        });
+      yield* delegate("budget:accepted-child");
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("budget:enable"),
+        threadId,
+        contextBudgetTokens: 200_000,
+      });
+      const providerThread = before.providerThreads[0]!;
+      const now = yield* DateTime.now;
+      yield* projections.apply({
+        id: EventId.make("budget:telemetry"),
+        type: "provider-thread.updated",
+        threadId,
+        occurredAt: now,
+        payload: { ...providerThread, contextUsage: { usedTokens: 200_000, maxTokens: 1_000_000 } },
+      });
+      before = yield* projections.getThreadProjection(threadId);
+      const blocked = yield* delegate("budget:blocked-child");
+      const after = yield* projections.getThreadProjection(threadId);
+      assert.isFalse(blocked.storedEvents.some(({ event }) => event.type === "subagent.updated"));
+      assert.deepEqual(after.subagents, before.subagents);
+      assert.deepEqual(after.runs, before.runs);
+      assert.deepEqual(after.messages, before.messages);
+      assert.deepEqual(after.thread.modelSelection, modelSelection);
+      assert.equal(
+        after.runtimeRequests.filter((request) => request.status === "pending").length,
+        1,
+      );
+      assert.isTrue(
+        after.turnItems.some(
+          (item) =>
+            item.type === "user_input_request" && item.questions[0]?.id === "context_handoff",
+        ),
+      );
+      yield* delegate("budget:retry-blocked-child");
+      assert.equal((yield* projections.getThreadProjection(threadId)).runtimeRequests.length, 1);
+      yield* projections.apply({
+        id: EventId.make("budget:unknown"),
+        type: "provider-thread.updated",
+        threadId,
+        occurredAt: now,
+        payload: { ...providerThread, contextUsage: null },
+      });
+      yield* delegate("budget:unknown-child");
+      assert.equal((yield* projections.getThreadProjection(threadId)).subagents.length, 2);
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("budget:disable"),
+        threadId,
+        contextBudgetTokens: null,
+      });
+      yield* projections.apply({
+        id: EventId.make("budget:over-off"),
+        type: "provider-thread.updated",
+        threadId,
+        occurredAt: now,
+        payload: { ...providerThread, contextUsage: { usedTokens: 250_000 } },
+      });
+      yield* delegate("budget:off-child");
+      assert.equal((yield* projections.getThreadProjection(threadId)).subagents.length, 3);
+    }).pipe(Effect.provide(layerTest)),
+);

@@ -16,12 +16,14 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
   TurnItemId,
+  ProviderThreadId,
 } from "./baseSchemas.ts";
 import {
   ScheduledTaskRunStatus,
   ScheduledTaskSchedule,
   ScheduledTaskUpsertSchedule,
 } from "./scheduledTask.ts";
+import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 import { ThreadLinkedPullRequest } from "./threadPullRequest.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
@@ -346,6 +348,18 @@ export const OrchestratorMcpThreadReadInput = Schema.Struct({
 export type OrchestratorMcpThreadReadInput = typeof OrchestratorMcpThreadReadInput.Type;
 
 export const OrchestratorMcpThreadDetail = Schema.Struct({
+  contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+  contextUsage: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        usage: ThreadTokenUsageSnapshot,
+        providerThreadId: ProviderThreadId,
+        nativeThreadId: Schema.NullOr(Schema.String),
+        reportedAt: Schema.NullOr(IsoDateTime),
+        source: Schema.Literals(["provider_turn", "provider_thread"]),
+      }),
+    ),
+  ),
   threadId: ThreadId,
   projectId: ProjectId,
   title: Schema.String,

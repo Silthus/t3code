@@ -119,6 +119,9 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           threadId,
           projectId,
           title: input.title,
+          ...(input.contextBudgetTokens === undefined
+            ? {}
+            : { contextBudgetTokens: input.contextBudgetTokens }),
           modelSelection,
           runtimeMode,
           interactionMode,

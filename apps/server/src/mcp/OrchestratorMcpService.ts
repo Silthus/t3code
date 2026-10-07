@@ -1,3 +1,4 @@
+import { currentContextUsage } from "../orchestration-v2/ContextBudgetGuard.ts";
 import {
   CommandId,
   type RunId,
@@ -640,13 +641,18 @@ function listItemFromShell(shell: OrchestrationV2ThreadShell): OrchestratorMcpTh
 }
 
 function threadDetail(
-  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "runtimeRequests">,
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "thread" | "runs" | "runtimeRequests" | "providerThreads" | "providerTurns" | "attempts"
+  >,
   itemCount: number,
 ): OrchestratorMcpThreadDetail {
   const latest = ThreadManagementService.latestRun(projection);
   const active = ThreadManagementService.latestActiveRun(projection);
   return {
     threadId: projection.thread.id,
+    contextBudgetTokens: projection.thread.contextBudgetTokens ?? null,
+    contextUsage: currentContextUsage(projection),
     projectId: projection.thread.projectId,
     title: projection.thread.title,
     createdBy: projection.thread.createdBy,
@@ -1022,6 +1028,9 @@ const make = Effect.gen(function* () {
           "runs",
           "runtimeRequests",
           "contextTransfers",
+          "providerThreads",
+          "providerTurns",
+          "attempts",
         ])
         .pipe(Effect.mapError(threadManagementFailure));
       return { parent, target } as const;
@@ -1855,7 +1864,7 @@ const make = Effect.gen(function* () {
         if (taskEvent?.event.type !== "subagent.updated") {
           return yield* failure(
             "orchestration_error",
-            "Delegated task command did not produce a task projection.",
+            "New child dispatch is paused by this thread's context budget. Save a durable handoff and continue through a thread fork under the human's current model selection, or explicitly raise/disable the budget. Existing children remain running. Read the pending context_handoff request with t3_thread_read.",
           );
         }
         const taskId = taskEvent.event.payload.id;

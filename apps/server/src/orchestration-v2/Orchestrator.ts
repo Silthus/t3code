@@ -121,6 +121,7 @@ import {
   isForkableSourceRunStatus,
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
+import { contextBudgetRequestEvents } from "./ContextBudgetGuard.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 
 export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDispatchError>()(
@@ -2176,6 +2177,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       id: command.threadId,
       projectId: command.projectId,
       title: command.title,
+      ...(command.contextBudgetTokens === undefined
+        ? {}
+        : { contextBudgetTokens: command.contextBudgetTokens }),
       providerInstanceId: command.modelSelection.instanceId,
       modelSelection: command.modelSelection,
       runtimeMode: command.runtimeMode,
@@ -2895,6 +2899,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return {
             ...thread,
             ...(command.title === undefined ? {} : { title: command.title }),
+            ...(command.contextBudgetTokens === undefined
+              ? {}
+              : { contextBudgetTokens: command.contextBudgetTokens }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -6457,6 +6464,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           "providerThreads",
           "providerTurns",
           "attempts",
+          "runtimeRequests",
         ])
         .pipe(
           Effect.mapError(
@@ -6497,6 +6505,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandType: command.type,
           cause: `Parent node ${command.parentNodeId} is not part of active run ${parentRun.id}.`,
         });
+      }
+
+      const budgetEvents = contextBudgetRequestEvents({
+        projection: parentProjection,
+        commandId: command.commandId,
+        now: command.createdAt ?? (yield* DateTime.now),
+      });
+      if (budgetEvents !== undefined) {
+        yield* Ref.update(events, (existing) => [...existing, ...budgetEvents]);
+        return;
       }
 
       const targetAdapter = yield* providerAdapters.get(command.modelSelection.instanceId).pipe(

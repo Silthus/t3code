@@ -1,6 +1,7 @@
 import { McpAttachmentInput } from "../attachment/input.ts";
 import {
   NonNegativeInt,
+  PositiveInt,
   ModelSelection,
   TrimmedNonEmptyString,
   ThreadId,
@@ -113,6 +114,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     title: TrimmedNonEmptyString,
+    contextBudgetTokens: Schema.optional(Schema.NullOr(PositiveInt)),
     modelSelection: Schema.optional(ModelSelection),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),
