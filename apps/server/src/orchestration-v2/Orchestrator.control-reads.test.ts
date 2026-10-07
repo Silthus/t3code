@@ -775,6 +775,39 @@ it.effect(
         resumed.subagents[1]!.childThreadId!,
       );
       assert.isNull(unknownChild.thread.contextBudgetTokens);
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("budget:enable-again"),
+        threadId,
+        contextBudgetTokens: 200_000,
+      });
+      yield* delegate("budget:handoff-before-interrupt");
+      yield* projections.apply({
+        id: EventId.make("budget:run-active"),
+        type: "run.updated",
+        threadId,
+        occurredAt: turnNow,
+        payload: { ...run, status: "running" },
+      });
+      yield* projections.apply({
+        id: EventId.make("budget:attempt-active"),
+        type: "run-attempt.updated",
+        threadId,
+        occurredAt: turnNow,
+        payload: { ...before.attempts[0]!, status: "running" },
+      });
+      yield* orchestrator.dispatch({
+        type: "run.interrupt",
+        commandId: CommandId.make("budget:interrupt"),
+        threadId,
+        runId: run.id,
+      });
+      const interrupted = yield* projections.getThreadProjection(threadId);
+      assert.isTrue(
+        interrupted.runtimeRequests.some(
+          (request) => request.id.startsWith("context-budget:") && request.status === "pending",
+        ),
+      );
     }).pipe(Effect.provide(layerTest)),
 );
 

@@ -87,7 +87,7 @@ export function contextBudgetRequestEvents(input: {
       payload: {
         id: nodeId,
         threadId,
-        runId: input.runId,
+        runId: null,
         parentNodeId: null,
         rootNodeId: nodeId,
         kind: "user_input_request",
