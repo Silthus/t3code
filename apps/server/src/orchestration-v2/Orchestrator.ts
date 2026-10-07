@@ -6476,19 +6476,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
     ) {
       const parentProjection = yield* projectionStore
-        .getThreadRecords(
-          command.parentThreadId,
-          [
-            "runs",
-            "nodes",
-            "subagents",
-            "providerThreads",
-            "providerTurns",
-            "attempts",
-            "runtimeRequests",
-          ],
-          { currentContextOnly: true },
-        )
+        .getThreadRecords(command.parentThreadId, [
+          "runs",
+          "nodes",
+          "subagents",
+          "providerThreads",
+          "providerTurns",
+          "attempts",
+          "runtimeRequests",
+        ])
         .pipe(
           Effect.mapError(
             (cause) =>

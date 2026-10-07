@@ -674,7 +674,31 @@ it.effect(
           createdBy: "agent",
           creationSource: "mcp",
         });
+      const parentTurnId = ProviderTurnId.make("budget:active-provider-turn");
+      const turnNow = yield* DateTime.now;
+      yield* projections.apply({
+        id: EventId.make("budget:active-turn"),
+        type: "provider-turn.updated",
+        threadId,
+        occurredAt: turnNow,
+        payload: {
+          id: parentTurnId,
+          providerThreadId: run.providerThreadId!,
+          nodeId: run.rootNodeId!,
+          runAttemptId: run.activeAttemptId,
+          nativeTurnRef: null,
+          ordinal: 1,
+          status: "running",
+          startedAt: turnNow,
+          completedAt: null,
+        },
+      });
       yield* delegate("budget:accepted-child");
+      const accepted = yield* projections.getThreadProjection(threadId);
+      assert.equal(
+        accepted.turnItems.find((item) => item.type === "subagent")?.providerTurnId,
+        parentTurnId,
+      );
       yield* orchestrator.dispatch({
         type: "thread.metadata.update",
         commandId: CommandId.make("budget:enable"),
