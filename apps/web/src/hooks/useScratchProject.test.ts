@@ -1,5 +1,5 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const testState = vi.hoisted(() => {
   const ensureScratchProject = async (request: { readonly environmentId: string }) => ({
@@ -47,7 +47,7 @@ vi.mock("./useSettings", () => ({
     selector(testState.settings),
 }));
 
-import { useScratchProject } from "./useScratchProject";
+import { BALANCED_SCRATCH_WAIT_MS, useScratchProject } from "./useScratchProject";
 
 const mac = EnvironmentId.make("mac");
 const box = EnvironmentId.make("box");
@@ -63,6 +63,10 @@ const ensuredEnvironmentIds = () =>
   testState.ensureScratch.mock.calls.map(([request]) => request.environmentId).toSorted();
 
 describe("useScratchProject", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     testState.ensureScratch.mockReset().mockImplementation(testState.ensureScratchProject);
     testState.settings = { loadBalancingEnabled: true, loadBalancingWeights: {} };
@@ -96,16 +100,38 @@ describe("useScratchProject", () => {
     expect(ensuredEnvironmentIds()).toEqual([mac]);
   });
 
-  it("opens the requested home without waiting for other machines", async () => {
+  it("waits for other machines so routing can choose among all of them", async () => {
+    vi.useFakeTimers();
+    const prepared: string[] = [];
+    testState.ensureScratch.mockImplementation(async (request) => {
+      if (request.environmentId === box) await new Promise((resolve) => setTimeout(resolve, 500));
+      prepared.push(request.environmentId);
+      return testState.ensureScratchProject(request);
+    });
+
+    const opening = useScratchProject()
+      .openScratchProject(mac)
+      .then(() => prepared.push("opened"));
+    await vi.advanceTimersByTimeAsync(500);
+    await opening;
+
+    expect(prepared).toEqual([mac, box, "opened"]);
+  });
+
+  it("stops waiting for a machine that does not answer", async () => {
+    vi.useFakeTimers();
     testState.ensureScratch.mockImplementation((request) =>
       request.environmentId === box
         ? new Promise<never>(() => {})
         : testState.ensureScratchProject(request),
     );
 
-    const project = await useScratchProject().openScratchProject(mac);
+    const opening = useScratchProject().openScratchProject(mac);
+    await vi.advanceTimersByTimeAsync(BALANCED_SCRATCH_WAIT_MS);
 
-    expect(project).toEqual({ environmentId: mac, id: ProjectId.make("scratch-mac") });
-    expect(ensuredEnvironmentIds()).toEqual([box, mac]);
+    await expect(opening).resolves.toEqual({
+      environmentId: mac,
+      id: ProjectId.make("scratch-mac"),
+    });
   });
 });

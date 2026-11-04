@@ -15,6 +15,9 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 
+/** How long a draft waits for other balanced machines to prepare their home. */
+export const BALANCED_SCRATCH_WAIT_MS = 2_000;
+
 function reportScratchFailure(error: unknown) {
   toastManager.add(
     stackedThreadToast({
@@ -89,7 +92,8 @@ export function useScratchProject() {
 
   // Automatic routing only picks machines that already have the project, so
   // a thread without a project needs its home on every balanced machine. The
-  // draft does not wait for them: routing picks each one up once it arrives.
+  // draft waits briefly so routing sees them all, but a slow machine cannot
+  // hold it: routing then decides among the machines that answered in time.
   const balancedScratchEnvironmentIds = useCallback(
     (requested: EnvironmentId): EnvironmentId[] =>
       loadBalancingEnabled
@@ -108,10 +112,19 @@ export function useScratchProject() {
   /** Resolves to the scratch project once it is in this client's store. */
   const openScratchProject = useCallback(
     async (environmentId: EnvironmentId): Promise<EnvironmentProject | null> => {
-      for (const otherEnvironmentId of balancedScratchEnvironmentIds(environmentId)) {
-        void ensureScratchProject(otherEnvironmentId, () => {});
-      }
-      return ensureScratchProject(environmentId, reportScratchFailure);
+      const otherProjects = Promise.all(
+        balancedScratchEnvironmentIds(environmentId).map((otherEnvironmentId) =>
+          ensureScratchProject(otherEnvironmentId, () => {}),
+        ),
+      );
+      const [project] = await Promise.all([
+        ensureScratchProject(environmentId, reportScratchFailure),
+        Promise.race([
+          otherProjects,
+          new Promise((resolve) => setTimeout(resolve, BALANCED_SCRATCH_WAIT_MS)),
+        ]),
+      ]);
+      return project;
     },
     [balancedScratchEnvironmentIds, ensureScratchProject],
   );
