@@ -8,7 +8,7 @@ import {
   resolveWorktreeSetupProgress,
 } from "./ChatView.logic";
 import * as DateTime from "effect/DateTime";
-import { restorePlanFollowUpComposer } from "./ChatView.logic";
+import { logicalProjectMembers, restorePlanFollowUpComposer } from "./ChatView.logic";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { prepareQueuedEditAttachments, recoverQueuedMessageEdit } from "./chat/queuedMessageEdit";
 import {
@@ -2644,10 +2644,14 @@ export default function ChatView(props: ChatViewProps) {
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
-    const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
-    const memberProjects = allProjects.filter(
-      (p) => deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings) === logicalKey,
-    );
+    const memberProjects = logicalProjectMembers({
+      activeProject,
+      projects: allProjects,
+      logicalKeyOf: (project) =>
+        deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings),
+      scratchWorkspaceRootOf: (environmentId) =>
+        environmentById.get(environmentId)?.serverConfig?.scratchWorkspaceRoot ?? null,
+    });
     const seen = new Set<string>();
     const envs: EnvironmentOption[] = [];
     for (const p of memberProjects) {

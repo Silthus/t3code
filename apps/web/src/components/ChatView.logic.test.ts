@@ -1,3 +1,4 @@
+import { logicalProjectMembers } from "./ChatView.logic";
 import { findRecordedWorktreeSetup, resolveVisibleWorktreeSetup } from "./ChatView.logic";
 import {
   recallCheckoutIsRepo,
@@ -2158,5 +2159,41 @@ describe("waitForRevertedMessage", () => {
     await vi.advanceTimersByTimeAsync(50);
     await settled;
     vi.useRealTimers();
+  });
+});
+
+describe("logicalProjectMembers", () => {
+  const mac = EnvironmentId.make("mac");
+  const box = EnvironmentId.make("box");
+  const scratchRoots = new Map([
+    [mac, "/Users/me/.t3/scratch"],
+    [box, "/home/me/.t3/scratch"],
+  ]);
+  const project = (environmentId: EnvironmentId, workspaceRoot: string, key: string) => ({
+    environmentId,
+    workspaceRoot,
+    key,
+  });
+  const macScratch = project(mac, "/Users/me/.t3/scratch", "mac:scratch");
+  const boxScratch = project(box, "/home/me/.t3/scratch", "box:scratch");
+  const macApp = project(mac, "/Users/me/app", "github.com/acme/app");
+  const boxApp = project(box, "/home/me/app", "github.com/acme/app");
+  const boxOther = project(box, "/home/me/other", "box:other");
+  const projects = [macScratch, boxScratch, macApp, boxApp, boxOther];
+  const members = (activeProject: (typeof projects)[number]) =>
+    logicalProjectMembers({
+      activeProject,
+      projects,
+      logicalKeyOf: (candidate) => candidate.key,
+      scratchWorkspaceRootOf: (environmentId) => scratchRoots.get(environmentId) ?? null,
+    });
+
+  it("offers every machine's no-project home for a thread without a project", () => {
+    expect(members(macScratch)).toEqual([macScratch, boxScratch]);
+  });
+
+  it("keeps grouping other projects by their logical key", () => {
+    expect(members(boxApp)).toEqual([macApp, boxApp]);
+    expect(members(boxOther)).toEqual([boxOther]);
   });
 });

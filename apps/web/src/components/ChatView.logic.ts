@@ -29,6 +29,7 @@ import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setu
 import * as DateTime from "effect/DateTime";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -1356,4 +1357,24 @@ export function restorePlanFollowUpComposer(input: {
     prompt: input.snapshot.prompt,
     detectTrigger: true,
   });
+}
+
+/**
+ * The copies of the active project on every machine, which the environment
+ * picker and automatic routing choose between. Each machine's "No project"
+ * home is its own folder, so those count as one project wherever they live.
+ */
+export function logicalProjectMembers<
+  TProject extends { readonly environmentId: EnvironmentId; readonly workspaceRoot: string },
+>(input: {
+  readonly activeProject: TProject;
+  readonly projects: readonly TProject[];
+  readonly logicalKeyOf: (project: TProject) => string;
+  readonly scratchWorkspaceRootOf: (environmentId: EnvironmentId) => string | null;
+}): TProject[] {
+  const isScratch = (project: TProject) =>
+    isScratchProject(project, input.scratchWorkspaceRootOf(project.environmentId));
+  if (isScratch(input.activeProject)) return input.projects.filter(isScratch);
+  const logicalKey = input.logicalKeyOf(input.activeProject);
+  return input.projects.filter((project) => input.logicalKeyOf(project) === logicalKey);
 }

@@ -13,6 +13,7 @@ import { useEnvironments } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useNewThreadHandler } from "./useHandleNewThread";
+import { useClientSettings } from "./useSettings";
 
 function reportScratchFailure(error: unknown) {
   toastManager.add(
@@ -34,6 +35,8 @@ export function useScratchProject() {
   const { environments } = useEnvironments();
   const ensureScratch = useAtomCommand(projectEnvironment.ensureScratch, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
+  const loadBalancingEnabled = useClientSettings((settings) => settings.loadBalancingEnabled);
+  const loadBalancingWeights = useClientSettings((settings) => settings.loadBalancingWeights);
 
   /** The scratch folder of a connected environment, or null when it offers none. */
   const scratchWorkspaceRootFor = useCallback(
@@ -60,13 +63,15 @@ export function useScratchProject() {
     [environments, scratchWorkspaceRootFor],
   );
 
-  /** Resolves to the scratch project once it is in this client's store. */
-  const openScratchProject = useCallback(
-    async (environmentId: EnvironmentId): Promise<EnvironmentProject | null> => {
+  const ensureScratchProject = useCallback(
+    async (
+      environmentId: EnvironmentId,
+      reportFailure: (error: unknown) => void,
+    ): Promise<EnvironmentProject | null> => {
       const result = await ensureScratch({ environmentId, input: {} });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
-          reportScratchFailure(squashAtomCommandFailure(result));
+          reportFailure(squashAtomCommandFailure(result));
         }
         return null;
       }
@@ -74,12 +79,43 @@ export function useScratchProject() {
       // the create event to reach the store before targeting one.
       return waitForProject(scopeProjectRef(environmentId, result.value.projectId)).catch(
         (error: unknown) => {
-          reportScratchFailure(error);
+          reportFailure(error);
           return null;
         },
       );
     },
     [ensureScratch],
+  );
+
+  // Automatic routing only picks machines that already have the project, so
+  // a thread without a project needs its home on every balanced machine.
+  const balancedScratchEnvironmentIds = useCallback(
+    (requested: EnvironmentId): EnvironmentId[] =>
+      loadBalancingEnabled
+        ? environments
+            .map((entry) => entry.environmentId)
+            .filter(
+              (environmentId) =>
+                environmentId !== requested &&
+                (loadBalancingWeights[environmentId] ?? 50) > 0 &&
+                scratchWorkspaceRootFor(environmentId) !== null,
+            )
+        : [],
+    [environments, loadBalancingEnabled, loadBalancingWeights, scratchWorkspaceRootFor],
+  );
+
+  /** Resolves to the scratch project once it is in this client's store. */
+  const openScratchProject = useCallback(
+    async (environmentId: EnvironmentId): Promise<EnvironmentProject | null> => {
+      const [project] = await Promise.all([
+        ensureScratchProject(environmentId, reportScratchFailure),
+        ...balancedScratchEnvironmentIds(environmentId).map((otherEnvironmentId) =>
+          ensureScratchProject(otherEnvironmentId, () => {}),
+        ),
+      ]);
+      return project;
+    },
+    [balancedScratchEnvironmentIds, ensureScratchProject],
   );
 
   const startScratchThread = useCallback(
