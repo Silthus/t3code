@@ -1,5 +1,4 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const testState = vi.hoisted(() => {
@@ -61,7 +60,7 @@ const connected = (environmentId: string, scratchWorkspaceRoot?: string) => ({
 });
 
 const ensuredEnvironmentIds = () =>
-  testState.ensureScratch.mock.calls.map(([request]) => request.environmentId);
+  testState.ensureScratch.mock.calls.map(([request]) => request.environmentId).toSorted();
 
 describe("useScratchProject", () => {
   beforeEach(() => {
@@ -78,7 +77,7 @@ describe("useScratchProject", () => {
     const project = await useScratchProject().openScratchProject(mac);
 
     expect(project).toEqual({ environmentId: mac, id: ProjectId.make("scratch-mac") });
-    expect(ensuredEnvironmentIds()).toEqual([mac, box]);
+    expect(ensuredEnvironmentIds()).toEqual([box, mac]);
   });
 
   it("keeps the no-project home on the requested machine when balancing is off", async () => {
@@ -97,15 +96,16 @@ describe("useScratchProject", () => {
     expect(ensuredEnvironmentIds()).toEqual([mac]);
   });
 
-  it("opens the requested home when another machine fails to prepare one", async () => {
-    testState.ensureScratch.mockImplementation(async (request) =>
+  it("opens the requested home without waiting for other machines", async () => {
+    testState.ensureScratch.mockImplementation((request) =>
       request.environmentId === box
-        ? ({ _tag: "Failure", cause: Cause.fail(new Error("offline")) } as never)
+        ? new Promise<never>(() => {})
         : testState.ensureScratchProject(request),
     );
 
     const project = await useScratchProject().openScratchProject(mac);
 
     expect(project).toEqual({ environmentId: mac, id: ProjectId.make("scratch-mac") });
+    expect(ensuredEnvironmentIds()).toEqual([box, mac]);
   });
 });

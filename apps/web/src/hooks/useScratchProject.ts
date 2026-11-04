@@ -88,7 +88,8 @@ export function useScratchProject() {
   );
 
   // Automatic routing only picks machines that already have the project, so
-  // a thread without a project needs its home on every balanced machine.
+  // a thread without a project needs its home on every balanced machine. The
+  // draft does not wait for them: routing picks each one up once it arrives.
   const balancedScratchEnvironmentIds = useCallback(
     (requested: EnvironmentId): EnvironmentId[] =>
       loadBalancingEnabled
@@ -107,13 +108,10 @@ export function useScratchProject() {
   /** Resolves to the scratch project once it is in this client's store. */
   const openScratchProject = useCallback(
     async (environmentId: EnvironmentId): Promise<EnvironmentProject | null> => {
-      const [project] = await Promise.all([
-        ensureScratchProject(environmentId, reportScratchFailure),
-        ...balancedScratchEnvironmentIds(environmentId).map((otherEnvironmentId) =>
-          ensureScratchProject(otherEnvironmentId, () => {}),
-        ),
-      ]);
-      return project;
+      for (const otherEnvironmentId of balancedScratchEnvironmentIds(environmentId)) {
+        void ensureScratchProject(otherEnvironmentId, () => {});
+      }
+      return ensureScratchProject(environmentId, reportScratchFailure);
     },
     [balancedScratchEnvironmentIds, ensureScratchProject],
   );
