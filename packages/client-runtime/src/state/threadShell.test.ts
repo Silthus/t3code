@@ -380,6 +380,48 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
     expect(registry.get(inputs).map((thread) => thread.id)).toEqual([helper.id]);
 
+    // No agent here hears the task's own question, so the parent here asks for input,
+    // an approval below it still wins, and an ended run no longer waits on the answer.
+    const question = {
+      ...approval,
+      id: RuntimeRequestId.make("question"),
+      kind: "user_input" as const,
+    };
+    registry.set(snapshotAtom(remoteEnvironmentId), {
+      ...v2ShellSnapshot,
+      threads: [{ ...task, pendingRuntimeRequest: question }, helper],
+    });
+    expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
+      "user_input",
+    );
+    registry.set(snapshotAtom(remoteEnvironmentId), {
+      ...v2ShellSnapshot,
+      threads: [
+        { ...task, pendingRuntimeRequest: question },
+        { ...helper, pendingRuntimeRequest: approval },
+      ],
+    });
+    expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
+      "approval",
+    );
+    registry.set(snapshotAtom(remoteEnvironmentId), {
+      ...v2ShellSnapshot,
+      threads: [
+        {
+          ...task,
+          status: "completed" as const,
+          activityRunStatus: null,
+          pendingRuntimeRequest: question,
+        },
+        helper,
+      ],
+    });
+    expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
+    registry.set(snapshotAtom(remoteEnvironmentId), {
+      ...v2ShellSnapshot,
+      threads: [task, helper],
+    });
+
     // A task whose parent is gone there is listed on its own, as is one whose
     // parent's environment is switched off.
     registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [] });

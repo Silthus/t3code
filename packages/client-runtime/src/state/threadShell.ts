@@ -98,7 +98,7 @@ function sideChatRequest(thread: OrchestrationV2ThreadShell): PendingSubagentReq
  * The threads to flag for a subagent's live approval, up its
  * subagent chain and through a side chat to its parent. `delegated` are tasks this
  * environment's threads delegated to linked environments, with what each one, or its
- * own subagents, asks.
+ * own subagents, asks; their questions count too.
  */
 function pendingSubagentRequestsByThread(
   threads: ReadonlyArray<OrchestrationV2ThreadShell>,
@@ -114,8 +114,6 @@ function pendingSubagentRequestsByThread(
     request: PendingSubagentRequest,
     seen: Set<ThreadId>,
   ) => {
-    // The coordinator answers child questions; only approvals need user attention.
-    if (request === "user_input") return;
     byId ??= new Map(threads.map((thread) => [thread.id, thread] as const));
     let parentId = firstParentId;
     while (parentId !== null && !seen.has(parentId)) {
@@ -139,7 +137,9 @@ function pendingSubagentRequestsByThread(
     }
     if (child.lineage.relationshipToParent !== "subagent") continue;
     const request = subagentRequest(child);
-    if (request !== null) flag(parentId, request, new Set([child.id]));
+    // The coordinator answers its subagents' questions; only approvals need the user.
+    // No agent here sees a question from a task in another environment, so those count.
+    if (request === "approval") flag(parentId, request, new Set([child.id]));
   }
   for (const task of delegated) flag(task.parentThreadId, task.request, new Set());
   return requests.size === 0 ? EMPTY_SUBAGENT_REQUESTS : requests;
