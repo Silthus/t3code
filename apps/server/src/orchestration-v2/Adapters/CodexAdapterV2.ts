@@ -678,10 +678,6 @@ function codexRuntimeModeTurnDefaults(runtimeMode: RuntimeMode): {
       return {
         approvalPolicy: "on-request",
         approvalsReviewer: "auto_review",
-        // Network comes only from the turn policy, so routine fetches would
-        // otherwise each wait on the reviewer. Codex adds config.toml's
-        // `[sandbox_workspace_write].writable_roots` to the thread's workspace
-        // roots itself; writes elsewhere still escalate to the reviewer.
         sandboxPolicy: {
           type: "workspaceWrite",
           networkAccess: true,

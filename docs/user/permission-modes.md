@@ -24,8 +24,8 @@ Providers enforce permissions differently. Some read-only actions can proceed in
 **Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
 including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
 to you for approval. On Codex, **Auto** lets commands use the network and write inside the
-project and any `writable_roots` listed under `[sandbox_workspace_write]` in
-`~/.codex/config.toml`; anything else goes to its review.
+project, temporary directories, and any `writable_roots` listed under `[sandbox_workspace_write]`
+in the `config.toml` of your Codex home (`~/.codex` by default); anything else goes to its review.
 
 Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
 file-change approvals offer **Allow all edits this session**. Its command approvals have no
