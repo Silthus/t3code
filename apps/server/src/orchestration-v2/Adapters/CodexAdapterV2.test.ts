@@ -429,10 +429,10 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.equal(approvalRequired.sandboxPolicy?.type, "readOnly");
       assert.equal(autoAcceptEdits.approvalPolicy, "on-request");
       assert.equal(autoAcceptEdits.approvalsReviewer, "user");
-      assert.equal(autoAcceptEdits.sandboxPolicy?.type, "workspaceWrite");
+      assert.deepEqual(autoAcceptEdits.sandboxPolicy, { type: "workspaceWrite" });
       assert.equal(auto.approvalPolicy, "on-request");
       assert.equal(auto.approvalsReviewer, "auto_review");
-      assert.equal(auto.sandboxPolicy?.type, "workspaceWrite");
+      assert.deepEqual(auto.sandboxPolicy, { type: "workspaceWrite", networkAccess: true });
       assert.equal(fullAccess.approvalPolicy, "never");
       assert.equal(fullAccess.approvalsReviewer, "user");
       assert.equal(fullAccess.sandboxPolicy?.type, "dangerFullAccess");
