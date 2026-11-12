@@ -680,6 +680,7 @@ function codexRuntimeModeTurnDefaults(runtimeMode: RuntimeMode): {
         approvalsReviewer: "auto_review",
         sandboxPolicy: {
           type: "workspaceWrite",
+          networkAccess: true,
         },
       };
     case "full-access":
